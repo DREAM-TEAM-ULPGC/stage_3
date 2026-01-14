@@ -1,0 +1,32 @@
+# Ignore build artifacts
+/build/
+target/
+*.class
+
+# Ignore IDE files
+.vscode/
+.idea/
+.github/
+
+indexer/
+datalake/
+*.db
+control_log.txt
+
+inverted_index.json
+progress.json
+catalog.json
+progress_parser.json
+
+dependency-reduced-pom.xml
+
+# JMH benchmark output
+benchmarks/results/
+*.csv
+*.json
+*.txt
+
+# Temporary benchmark data
+**/jmh-result.json
+**/jmh-result.csv
+**/jmh-output.txt
