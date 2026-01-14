@@ -9,8 +9,8 @@ WORKDIR /app
 # Install curl for healthchecks
 RUN apk add --no-cache curl
 
-# Copy the JAR file
-COPY indexer-service/target/indexer-service-1.0.0.jar app.jar
+# Copy the fat JAR file (shaded with all dependencies)
+COPY indexer-service/target/indexer-service.jar app.jar
 
 # Create directories for data
 RUN mkdir -p datalake indexer datamart metadata

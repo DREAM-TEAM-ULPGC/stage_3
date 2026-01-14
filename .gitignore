@@ -35,5 +35,6 @@ scripts/
 BROKER-README.md
 DATALAKE-README.md
 GUIA_PRUEBA_LOCAL.md
+GUIA_TESTING.md
 
-error.log
+nginx/logs/

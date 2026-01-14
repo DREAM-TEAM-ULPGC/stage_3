@@ -63,7 +63,7 @@ services:
     networks:
       - gutenberg-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8161/admin/"]
+      test: ["CMD", "curl", "-f", "-u", "admin:admin", "http://localhost:8161/admin/"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -76,14 +76,17 @@ services:
   hazelcast-1:
     image: hazelcast/hazelcast:5.3.6
     container_name: hazelcast-1
+    hostname: hazelcast-1
     ports:
       - "5701:5701"
     environment:
       - HZ_CLUSTERNAME=gutenberg-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
-      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-1,hazelcast-2,hazelcast-3
-      - JAVA_OPTS=-Xms256m -Xmx512m
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - HZ_NETWORK_PUBLICADDRESS=hazelcast-1:5701
+      - HZ_NETWORK_INTERFACES_ENABLED=false
+      - JAVA_OPTS=-Xms256m -Xmx512m -Dhazelcast.local.publicAddress=hazelcast-1:5701 -Dhazelcast.socket.bind.any=false
     volumes:
       - hazelcast-data-1:/opt/hazelcast/data
     networks:
@@ -93,14 +96,17 @@ services:
   hazelcast-2:
     image: hazelcast/hazelcast:5.3.6
     container_name: hazelcast-2
+    hostname: hazelcast-2
     ports:
       - "5702:5701"
     environment:
       - HZ_CLUSTERNAME=gutenberg-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
-      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-1,hazelcast-2,hazelcast-3
-      - JAVA_OPTS=-Xms256m -Xmx512m
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - HZ_NETWORK_PUBLICADDRESS=hazelcast-2:5701
+      - HZ_NETWORK_INTERFACES_ENABLED=false
+      - JAVA_OPTS=-Xms256m -Xmx512m -Dhazelcast.local.publicAddress=hazelcast-2:5701 -Dhazelcast.socket.bind.any=false
     volumes:
       - hazelcast-data-2:/opt/hazelcast/data
     networks:
@@ -112,14 +118,17 @@ services:
   hazelcast-3:
     image: hazelcast/hazelcast:5.3.6
     container_name: hazelcast-3
+    hostname: hazelcast-3
     ports:
       - "5703:5701"
     environment:
       - HZ_CLUSTERNAME=gutenberg-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
-      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-1,hazelcast-2,hazelcast-3
-      - JAVA_OPTS=-Xms256m -Xmx512m
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - HZ_NETWORK_PUBLICADDRESS=hazelcast-3:5701
+      - HZ_NETWORK_INTERFACES_ENABLED=false
+      - JAVA_OPTS=-Xms256m -Xmx512m -Dhazelcast.local.publicAddress=hazelcast-3:5701 -Dhazelcast.socket.bind.any=false
     volumes:
       - hazelcast-data-3:/opt/hazelcast/data
     networks:
@@ -143,6 +152,8 @@ services:
       - BROKER_ENABLED=true
       - BROKER_URL=tcp://activemq:61616
       - DATALAKE_DIR=/app/datalake
+      - DATALAKE_PEERS=http://ingestion-2:7001
+      - DATALAKE_REPLICATION_FACTOR=2
     volumes:
       - shared-datalake:/app/datalake
     networks:
@@ -150,7 +161,7 @@ services:
     depends_on:
       - activemq
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7001/status"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -167,6 +178,8 @@ services:
       - BROKER_ENABLED=true
       - BROKER_URL=tcp://activemq:61616
       - DATALAKE_DIR=/app/datalake
+      - DATALAKE_PEERS=http://ingestion-1:7001
+      - DATALAKE_REPLICATION_FACTOR=2
     volumes:
       - shared-datalake:/app/datalake
     networks:
@@ -174,7 +187,7 @@ services:
     depends_on:
       - activemq
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7001/status"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -196,7 +209,7 @@ services:
       - BROKER_URL=tcp://activemq:61616
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
-      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - HAZELCAST_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
       - DATALAKE_PATH=/app/datalake
       - DB_PATH=/app/datamart/datamart.db
     volumes:
@@ -230,7 +243,7 @@ services:
       - BROKER_URL=tcp://activemq:61616
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
-      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - HAZELCAST_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
       - DATALAKE_PATH=/app/datalake
       - DB_PATH=/app/datamart/datamart.db
     volumes:
@@ -266,8 +279,8 @@ services:
       - SERVER_PORT=7003
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
-      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
-      - INDEX_PATH=/app/indexer/inverted_index.json
+      - HAZELCAST_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - INDEX_PATH=/app/indexer/tsv-index
       - DB_PATH=/app/datamart/datamart.db
     volumes:
       - shared-index:/app/indexer:ro
@@ -295,8 +308,8 @@ services:
       - SERVER_PORT=7003
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
-      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
-      - INDEX_PATH=/app/indexer/inverted_index.json
+      - HAZELCAST_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - INDEX_PATH=/app/indexer/tsv-index
       - DB_PATH=/app/datamart/datamart.db
     volumes:
       - shared-index:/app/indexer:ro
@@ -324,8 +337,8 @@ services:
       - SERVER_PORT=7003
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
-      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
-      - INDEX_PATH=/app/indexer/inverted_index.json
+      - HAZELCAST_MEMBERS=hazelcast-1:5701,hazelcast-2:5701,hazelcast-3:5701
+      - INDEX_PATH=/app/indexer/tsv-index
       - DB_PATH=/app/datamart/datamart.db
     volumes:
       - shared-index:/app/indexer:ro

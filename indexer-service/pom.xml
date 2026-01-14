@@ -22,6 +22,25 @@
             <artifactId>common</artifactId>
         </dependency>
 
+        <!-- Hazelcast for distributed caching (needed for fat JAR) -->
+        <dependency>
+            <groupId>com.hazelcast</groupId>
+            <artifactId>hazelcast</artifactId>
+        </dependency>
+
+        <!-- ActiveMQ client (needed for fat JAR) -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-client</artifactId>
+        </dependency>
+
+        <!-- JMS API for ActiveMQ -->
+        <dependency>
+            <groupId>javax.jms</groupId>
+            <artifactId>javax.jms-api</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+
         <!-- Framework web -->
         <dependency>
             <groupId>io.javalin</groupId>
@@ -32,6 +51,12 @@
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
+        </dependency>
+
+        <!-- Jackson for Javalin JSON serialization -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- SQLite -->

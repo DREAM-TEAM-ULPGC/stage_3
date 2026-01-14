@@ -20,6 +20,12 @@
       <artifactId>common</artifactId>
     </dependency>
 
+    <!-- Hazelcast for distributed caching (needed for fat JAR) -->
+    <dependency>
+      <groupId>com.hazelcast</groupId>
+      <artifactId>hazelcast</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>io.javalin</groupId>
       <artifactId>javalin</artifactId>

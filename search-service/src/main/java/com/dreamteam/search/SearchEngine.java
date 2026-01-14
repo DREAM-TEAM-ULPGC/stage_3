@@ -89,29 +89,71 @@ public class SearchEngine {
 
     private static Map<String, List<Integer>> loadIndex(Path path) {
         try {
-            if (!Files.exists(path)) {
-                System.out.println("Warning: Index file not found at " + path + ". Starting with empty index.");
+            // Check if path is a directory (TSV index) or file (JSON index)
+            if (Files.isDirectory(path)) {
+                return loadTsvIndex(path);
+            } else if (Files.exists(path)) {
+                return loadJsonIndex(path);
+            } else {
+                // Try TSV index directory
+                Path tsvPath = path.getParent().resolve("tsv-index");
+                if (Files.isDirectory(tsvPath)) {
+                    return loadTsvIndex(tsvPath);
+                }
+                System.out.println("Warning: Index not found at " + path + ". Starting with empty index.");
                 return new HashMap<>();
             }
-
-            String json = Files.readString(path);
-            Type type = new TypeToken<Map<String, List<Integer>>>(){}.getType();
-            Map<String, List<Integer>> map = new Gson().fromJson(json, type);
-            
-            if (map == null) {
-                System.out.println("Warning: Index file is empty or invalid at " + path + ". Starting with empty index.");
-                return new HashMap<>();
-            }
-            
-            map.replaceAll((k, v) -> v.stream().distinct().collect(Collectors.toList()));
-
-            System.out.println("Successfully loaded index from " + path + " with " + map.size() + " terms.");
-            return map;
-        } catch (IOException exception) {
-            System.err.println("Warning: Failed to load inverted index at " + path + ": " + exception.getMessage());
-            System.err.println("Starting with empty index.");
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to load inverted index: " + e.getMessage());
             return new HashMap<>();
         }
+    }
+
+    private static Map<String, List<Integer>> loadJsonIndex(Path path) throws IOException {
+        String json = Files.readString(path);
+        Type type = new TypeToken<Map<String, List<Integer>>>(){}.getType();
+        Map<String, List<Integer>> map = new Gson().fromJson(json, type);
+        
+        if (map == null) {
+            System.out.println("Warning: Index file is empty or invalid at " + path + ". Starting with empty index.");
+            return new HashMap<>();
+        }
+        
+        map.replaceAll((k, v) -> v.stream().distinct().collect(Collectors.toList()));
+        System.out.println("Successfully loaded JSON index from " + path + " with " + map.size() + " terms.");
+        return map;
+    }
+
+    private static Map<String, List<Integer>> loadTsvIndex(Path tsvDir) throws IOException {
+        Map<String, List<Integer>> index = new HashMap<>();
+        
+        try (var files = Files.list(tsvDir)) {
+            files.filter(f -> f.toString().endsWith(".tsv"))
+                 .forEach(file -> {
+                     try {
+                         String term = file.getFileName().toString().replace(".tsv", "");
+                         Set<Integer> bookIds = new HashSet<>();
+                         
+                         for (String line : Files.readAllLines(file)) {
+                             String[] parts = line.split("\t");
+                             if (parts.length >= 1) {
+                                 try {
+                                     bookIds.add(Integer.parseInt(parts[0].trim()));
+                                 } catch (NumberFormatException ignore) {}
+                             }
+                         }
+                         
+                         if (!bookIds.isEmpty()) {
+                             index.put(term, new ArrayList<>(bookIds));
+                         }
+                     } catch (IOException e) {
+                         System.err.println("Error reading TSV file: " + file);
+                     }
+                 });
+        }
+        
+        System.out.println("Successfully loaded TSV index from " + tsvDir + " with " + index.size() + " terms.");
+        return index;
     }
 
     private static int estimateDocCount(Map<String, List<Integer>> idx) {

@@ -4,17 +4,15 @@ import java.util.List;
 import java.util.Map;
 
 import com.dreamteam.common.config.ClusterConfig;
-import com.hazelcast.config.Config;
-import com.hazelcast.config.JoinConfig;
-import com.hazelcast.config.MapConfig;
-import com.hazelcast.config.NetworkConfig;
-import com.hazelcast.core.Hazelcast;
+import com.hazelcast.client.HazelcastClient;
+import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
 
 /**
  * Factory and utility class for Hazelcast distributed data structures.
- * Manages the Hazelcast instance lifecycle and provides access to distributed maps.
+ * Manages the Hazelcast CLIENT instance lifecycle and provides access to distributed maps.
+ * Connects to external Hazelcast cluster nodes.
  */
 public class HazelcastManager {
 
@@ -22,55 +20,40 @@ public class HazelcastManager {
     private static final Object lock = new Object();
 
     /**
-     * Gets or creates the Hazelcast instance for this node.
-     * Uses TCP/IP discovery with members from configuration.
+     * Gets or creates the Hazelcast CLIENT instance.
+     * Connects to the Hazelcast cluster members from configuration.
      */
     public static HazelcastInstance getInstance() {
         if (instance == null) {
             synchronized (lock) {
                 if (instance == null) {
-                    instance = createInstance();
+                    instance = createClientInstance();
                 }
             }
         }
         return instance;
     }
 
-    private static HazelcastInstance createInstance() {
-        Config config = new Config();
-        config.setClusterName(ClusterConfig.getHazelcastClusterName());
+    private static HazelcastInstance createClientInstance() {
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.setClusterName(ClusterConfig.getHazelcastClusterName());
 
-        // Network configuration
-        NetworkConfig networkConfig = config.getNetworkConfig();
-        networkConfig.setPort(ClusterConfig.getHazelcastPort());
-        networkConfig.setPortAutoIncrement(true);
-
-        // TCP/IP discovery (disable multicast for controlled environments)
-        JoinConfig joinConfig = networkConfig.getJoin();
-        joinConfig.getMulticastConfig().setEnabled(false);
-        joinConfig.getTcpIpConfig().setEnabled(true);
-
+        // Add cluster member addresses
         List<String> members = ClusterConfig.getHazelcastMembers();
         for (String member : members) {
-            joinConfig.getTcpIpConfig().addMember(member);
+            clientConfig.getNetworkConfig().addAddress(member);
         }
 
-        // Configure the inverted index map
-        MapConfig indexMapConfig = new MapConfig(ClusterConfig.getIndexMapName());
-        indexMapConfig.setBackupCount(ClusterConfig.getHazelcastBackupCount());
-        indexMapConfig.setAsyncBackupCount(0);
-        config.addMapConfig(indexMapConfig);
+        // Connection retry configuration
+        clientConfig.getConnectionStrategyConfig()
+            .getConnectionRetryConfig()
+            .setClusterConnectTimeoutMillis(30000);
 
-        // Configure map for tracking processed documents (idempotency)
-        MapConfig processedMapConfig = new MapConfig("processed-documents");
-        processedMapConfig.setBackupCount(ClusterConfig.getHazelcastBackupCount());
-        config.addMapConfig(processedMapConfig);
+        HazelcastInstance client = HazelcastClient.newHazelcastClient(clientConfig);
+        System.out.println("Hazelcast CLIENT connected. Cluster: " + clientConfig.getClusterName() +
+                ", Members: " + client.getCluster().getMembers().size());
 
-        HazelcastInstance hz = Hazelcast.newHazelcastInstance(config);
-        System.out.println("Hazelcast instance started. Cluster: " + config.getClusterName() +
-                ", Members: " + hz.getCluster().getMembers().size());
-
-        return hz;
+        return client;
     }
 
     /**
