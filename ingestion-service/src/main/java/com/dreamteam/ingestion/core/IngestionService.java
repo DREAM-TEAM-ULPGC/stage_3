@@ -13,23 +13,35 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import com.dreamteam.ingestion.broker.IngestionEventPublisher;
+import com.dreamteam.ingestion.replication.DatalakeReplicator;
 
 public class IngestionService {
 
-	public record IngestionResult(String status, String path) {}
+	public record IngestionResult(String status, String path, int replicas) {
+		public IngestionResult(String status, String path) {
+			this(status, path, 0);
+		}
+	}
 
 	private final Path datalakeDir;
 	private final Path logFile;
 	private final IngestionEventPublisher eventPublisher;
+	private final DatalakeReplicator replicator;
 
 	public IngestionService(String datalakeDir, String logFile) {
-		this(datalakeDir, logFile, null);
+		this(datalakeDir, logFile, null, null);
 	}
 
 	public IngestionService(String datalakeDir, String logFile, IngestionEventPublisher eventPublisher) {
+		this(datalakeDir, logFile, eventPublisher, null);
+	}
+
+	public IngestionService(String datalakeDir, String logFile, 
+							IngestionEventPublisher eventPublisher, DatalakeReplicator replicator) {
 		this.datalakeDir = Paths.get(datalakeDir);
 		this.logFile = Paths.get(logFile);
 		this.eventPublisher = eventPublisher;
+		this.replicator = replicator;
 	}
 
 	public IngestionResult ingest(int bookId) {
@@ -57,12 +69,18 @@ public class IngestionService {
 			log(String.format("%s;book=%d;path=%s;bytes=%d",
 					now.toString(), bookId, relativePath, raw.length()));
 
+			// Replicate to peer nodes for fault tolerance
+			int replicaCount = 0;
+			if (replicator != null && replicator.isEnabled()) {
+				replicaCount = replicator.replicateBook(bookId, relativePath, raw, parts.header(), parts.body());
+			}
+
 			// Publish indexing event to message broker
 			if (eventPublisher != null) {
 				eventPublisher.publishIndexRequest(bookId, relativePath, raw);
 			}
 
-			return new IngestionResult("downloaded", relativePath);
+			return new IngestionResult("downloaded", relativePath, replicaCount);
 		} catch (Exception exception) {
 			return new IngestionResult("error", exception.getMessage());
 		}
