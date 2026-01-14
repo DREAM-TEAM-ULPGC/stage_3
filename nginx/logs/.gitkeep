@@ -1,0 +1,2 @@
+# Nginx log directory placeholder
+# This directory is mounted as a volume for nginx access and error logs

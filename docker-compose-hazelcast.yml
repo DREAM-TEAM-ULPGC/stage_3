@@ -1,0 +1,203 @@
+version: '3.8'
+
+# Docker Compose for Hazelcast Distributed In-Memory Index Cluster
+# Stage 3 - Distributed Architecture
+
+services:
+  # Hazelcast Management Center (Optional - for monitoring)
+  hazelcast-mancenter:
+    image: hazelcast/management-center:5.3
+    container_name: hazelcast-mancenter
+    ports:
+      - "8080:8080"
+    environment:
+      - MC_DEFAULT_CLUSTER=gutenberg-cluster
+      - MC_DEFAULT_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
+    networks:
+      - gutenberg-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Hazelcast Node 1
+  hazelcast-node-1:
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hazelcast-node-1
+    ports:
+      - "5701:5701"
+    environment:
+      - HZ_CLUSTERNAME=gutenberg-cluster
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-node-1,hazelcast-node-2,hazelcast-node-3
+      - JAVA_OPTS=-Xms512m -Xmx1g
+    volumes:
+      - hazelcast-data-1:/opt/hazelcast/data
+    networks:
+      - gutenberg-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5701/hazelcast/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Hazelcast Node 2
+  hazelcast-node-2:
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hazelcast-node-2
+    ports:
+      - "5702:5701"
+    environment:
+      - HZ_CLUSTERNAME=gutenberg-cluster
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-node-1,hazelcast-node-2,hazelcast-node-3
+      - JAVA_OPTS=-Xms512m -Xmx1g
+    volumes:
+      - hazelcast-data-2:/opt/hazelcast/data
+    networks:
+      - gutenberg-network
+    depends_on:
+      hazelcast-node-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5701/hazelcast/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Hazelcast Node 3
+  hazelcast-node-3:
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hazelcast-node-3
+    ports:
+      - "5703:5701"
+    environment:
+      - HZ_CLUSTERNAME=gutenberg-cluster
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-node-1,hazelcast-node-2,hazelcast-node-3
+      - JAVA_OPTS=-Xms512m -Xmx1g
+    volumes:
+      - hazelcast-data-3:/opt/hazelcast/data
+    networks:
+      - gutenberg-network
+    depends_on:
+      hazelcast-node-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5701/hazelcast/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Indexer Service Node 1
+  indexer-service-1:
+    build:
+      context: .
+      dockerfile: indexer-service/Dockerfile
+    container_name: indexer-service-1
+    ports:
+      - "7002:7002"
+    environment:
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
+      - BROKER_ENABLED=true
+      - BROKER_URL=tcp://activemq:61616
+      - NODE_ID=indexer-node-1
+    volumes:
+      - shared-datalake:/app/datalake
+      - shared-index:/app/indexer
+      - shared-datamart:/app/datamart
+    networks:
+      - gutenberg-network
+    depends_on:
+      - hazelcast-node-1
+      - hazelcast-node-2
+      - hazelcast-node-3
+
+  # Indexer Service Node 2
+  indexer-service-2:
+    build:
+      context: .
+      dockerfile: indexer-service/Dockerfile
+    container_name: indexer-service-2
+    ports:
+      - "7012:7002"
+    environment:
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
+      - BROKER_ENABLED=true
+      - BROKER_URL=tcp://activemq:61616
+      - NODE_ID=indexer-node-2
+    volumes:
+      - shared-datalake:/app/datalake
+      - shared-index:/app/indexer
+      - shared-datamart:/app/datamart
+    networks:
+      - gutenberg-network
+    depends_on:
+      - hazelcast-node-1
+      - hazelcast-node-2
+      - hazelcast-node-3
+
+  # Search Service Node 1
+  search-service-1:
+    build:
+      context: .
+      dockerfile: search-service/Dockerfile
+    container_name: search-service-1
+    ports:
+      - "7003:7003"
+    environment:
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
+    volumes:
+      - shared-index:/app/indexer
+      - shared-datamart:/app/datamart
+    networks:
+      - gutenberg-network
+    depends_on:
+      - hazelcast-node-1
+      - hazelcast-node-2
+      - hazelcast-node-3
+
+  # Search Service Node 2
+  search-service-2:
+    build:
+      context: .
+      dockerfile: search-service/Dockerfile
+    container_name: search-service-2
+    ports:
+      - "7013:7003"
+    environment:
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
+    volumes:
+      - shared-index:/app/indexer
+      - shared-datamart:/app/datamart
+    networks:
+      - gutenberg-network
+    depends_on:
+      - hazelcast-node-1
+      - hazelcast-node-2
+      - hazelcast-node-3
+
+networks:
+  gutenberg-network:
+    driver: bridge
+    name: gutenberg-distributed-network
+
+volumes:
+  hazelcast-data-1:
+  hazelcast-data-2:
+  hazelcast-data-3:
+  shared-datalake:
+  shared-index:
+  shared-datamart:

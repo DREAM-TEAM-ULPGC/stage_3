@@ -30,3 +30,7 @@ benchmarks/results/
 **/jmh-result.json
 **/jmh-result.csv
 **/jmh-output.txt
+
+scripts/
+BROKER-README.md
+DATALAKE-README.md

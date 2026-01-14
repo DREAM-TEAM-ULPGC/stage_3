@@ -7,6 +7,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,13 @@ import java.util.stream.Collectors;
 import com.dreamteam.search.models.Book;
 
 
+/**
+ * Data Access Object for book metadata.
+ * Configured for horizontal scalability:
+ * - Read-only mode (query_only pragma)
+ * - WAL journal mode for concurrent readers
+ * - Connection reuse with proper synchronization
+ */
 public class MetadataDao implements AutoCloseable {
     private Connection connection;
     private String jdbcUrl;
@@ -34,9 +42,19 @@ public class MetadataDao implements AutoCloseable {
                 return;
             }
 
-            this.connection = DriverManager.getConnection(jdbcUrl);
+            // Enable shared cache and read-only mode for horizontal scalability
+            String readOnlyJdbc = jdbcUrl + "?mode=ro&cache=shared";
+            this.connection = DriverManager.getConnection(readOnlyJdbc);
+            
+            // Enable WAL mode for concurrent readers (already set on DB, but ensure)
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA journal_mode=WAL");
+                stmt.execute("PRAGMA query_only=ON");
+                stmt.execute("PRAGMA read_uncommitted=ON");
+            }
+            
             this.isConnected = true;
-            System.out.println("Successfully connected to database at " + dbPath);
+            System.out.println("Successfully connected to database at " + dbPath + " (read-only, WAL mode)");
         } catch (SQLException exception) {
             System.err.println("Warning: Cannot connect to SQLite at " + jdbcUrl + ": " + exception.getMessage());
             System.err.println("Metadata queries will return empty results.");
