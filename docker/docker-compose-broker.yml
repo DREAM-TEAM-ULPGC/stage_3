@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Apache ActiveMQ Message Broker
+  activemq:
+    image: apache/activemq-classic:5.18.3
+    container_name: stage3-activemq
+    ports:
+      - "61616:61616"   # OpenWire protocol (JMS)
+      - "8161:8161"     # Web Console
+      - "5672:5672"     # AMQP
+      - "61613:61613"   # STOMP
+    environment:
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin
+    volumes:
+      - activemq-data:/opt/apache-activemq/data
+    networks:
+      - stage3-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8161/admin"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  activemq-data:
+    driver: local
+
+networks:
+  stage3-network:
+    driver: bridge

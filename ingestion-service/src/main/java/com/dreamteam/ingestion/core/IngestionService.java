@@ -12,16 +12,24 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import com.dreamteam.ingestion.broker.IngestionEventPublisher;
+
 public class IngestionService {
 
 	public record IngestionResult(String status, String path) {}
 
 	private final Path datalakeDir;
 	private final Path logFile;
+	private final IngestionEventPublisher eventPublisher;
 
 	public IngestionService(String datalakeDir, String logFile) {
+		this(datalakeDir, logFile, null);
+	}
+
+	public IngestionService(String datalakeDir, String logFile, IngestionEventPublisher eventPublisher) {
 		this.datalakeDir = Paths.get(datalakeDir);
 		this.logFile = Paths.get(logFile);
+		this.eventPublisher = eventPublisher;
 	}
 
 	public IngestionResult ingest(int bookId) {
@@ -45,10 +53,16 @@ public class IngestionService {
 			Files.writeString(base.resolve("header.txt"), parts.header(), StandardCharsets.UTF_8);
 			Files.writeString(base.resolve("body.txt"), parts.body(), StandardCharsets.UTF_8);
 
+			String relativePath = relativize(base);
 			log(String.format("%s;book=%d;path=%s;bytes=%d",
-					now.toString(), bookId, relativize(base), raw.length()));
+					now.toString(), bookId, relativePath, raw.length()));
 
-			return new IngestionResult("downloaded", relativize(base));
+			// Publish indexing event to message broker
+			if (eventPublisher != null) {
+				eventPublisher.publishIndexRequest(bookId, relativePath, raw);
+			}
+
+			return new IngestionResult("downloaded", relativePath);
 		} catch (Exception exception) {
 			return new IngestionResult("error", exception.getMessage());
 		}

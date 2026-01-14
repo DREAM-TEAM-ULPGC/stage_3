@@ -3,11 +3,14 @@ package com.dreamteam;
 import java.util.Map;
 
 import com.dreamteam.config.ConfigLoader;
+import com.dreamteam.indexer.broker.IndexingEventConsumer;
 import com.dreamteam.service.IndexerService;
 
 import io.javalin.Javalin;
 
 public class App {
+
+    private static IndexingEventConsumer eventConsumer;
 
     public static void main(String[] args) {
 
@@ -18,6 +21,7 @@ public class App {
         String indexProgressPath = ConfigLoader.getProperty("index.progress.path", "indexer/progress.json");
         String catalogProgressPath = ConfigLoader.getProperty("catalog.progress.path", "metadata/progress_parser.json");
         int port = ConfigLoader.getIntProperty("server.port", 7002);
+        boolean brokerEnabled = ConfigLoader.getBooleanProperty("broker.enabled", true);
 
         IndexerService service = new IndexerService(
                 datalakePath,
@@ -28,15 +32,32 @@ public class App {
                 catalogProgressPath
         );
 
+        // Initialize event consumer for broker integration
+        if (brokerEnabled) {
+            eventConsumer = new IndexingEventConsumer((bookId, path, hash) -> {
+                System.out.printf("Event-driven indexing for book %d at path %s%n", bookId, path);
+                service.updateBookIndex(bookId);
+            });
+            eventConsumer.start();
+        }
+
         Javalin app = Javalin.create(config ->
                 config.http.defaultContentType = "application/json"
         ).start(port);
 
         System.out.println("Indexer Service started on port " + port);
 
-        app.get("/status", ctx ->
-                ctx.json(Map.of("service", "indexer-service", "status", "running"))
-        );
+        app.get("/status", ctx -> {
+            Map<String, Object> status = new java.util.HashMap<>();
+            status.put("service", "indexer-service");
+            status.put("status", "running");
+            if (eventConsumer != null) {
+                status.put("broker_connected", eventConsumer.isRunning());
+                status.put("messages_processed", eventConsumer.getMessagesProcessed());
+                status.put("duplicates_skipped", eventConsumer.getDuplicatesSkipped());
+            }
+            ctx.json(status);
+        });
 
         app.get("/index/status", ctx ->
                 ctx.json(service.getStatus())
@@ -57,6 +78,9 @@ public class App {
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("Shutting down Indexer Service...");
+            if (eventConsumer != null) {
+                eventConsumer.close();
+            }
             app.stop();
         }));
     }
