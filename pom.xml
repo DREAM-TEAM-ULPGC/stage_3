@@ -14,7 +14,6 @@
 
     <modules>
         <module>common</module>
-        <module>control-service</module>
         <module>ingestion-service</module>
         <module>indexer-service</module>
         <module>search-service</module>
