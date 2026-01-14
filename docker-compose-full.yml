@@ -36,19 +36,7 @@ services:
       - ./nginx/logs:/var/log/nginx
     networks:
       - gutenberg-network
-    depends_on:
-      - search-1
-      - search-2
-      - search-3
-      - indexer-1
-      - indexer-2
-      - ingestion-1
-      - ingestion-2
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/nginx/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    # Nginx will retry connecting to upstreams, no strict dependencies needed
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -100,11 +88,6 @@ services:
       - hazelcast-data-1:/opt/hazelcast/data
     networks:
       - gutenberg-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5701/hazelcast/health/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
 
   hazelcast-2:
@@ -123,13 +106,7 @@ services:
     networks:
       - gutenberg-network
     depends_on:
-      hazelcast-1:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5701/hazelcast/health/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - hazelcast-1
     restart: unless-stopped
 
   hazelcast-3:
@@ -148,13 +125,7 @@ services:
     networks:
       - gutenberg-network
     depends_on:
-      hazelcast-2:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5701/hazelcast/health/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - hazelcast-2
     restart: unless-stopped
 
   # ===========================================================================

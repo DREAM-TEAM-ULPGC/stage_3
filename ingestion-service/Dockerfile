@@ -10,7 +10,7 @@ WORKDIR /app
 RUN apk add --no-cache curl
 
 # Copy the JAR file
-COPY ingestion-service/target/ingestion-service-1.0-SNAPSHOT.jar app.jar
+COPY ingestion-service/target/ingestion-service-1.0.0.jar app.jar
 
 # Create directories for data
 RUN mkdir -p datalake

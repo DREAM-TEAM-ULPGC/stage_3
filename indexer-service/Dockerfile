@@ -10,7 +10,7 @@ WORKDIR /app
 RUN apk add --no-cache curl
 
 # Copy the JAR file
-COPY indexer-service/target/indexer-service-1.0-SNAPSHOT.jar app.jar
+COPY indexer-service/target/indexer-service-1.0.0.jar app.jar
 
 # Create directories for data
 RUN mkdir -p datalake indexer datamart metadata

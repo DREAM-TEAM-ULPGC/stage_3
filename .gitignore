@@ -34,3 +34,6 @@ benchmarks/results/
 scripts/
 BROKER-README.md
 DATALAKE-README.md
+GUIA_PRUEBA_LOCAL.md
+
+error.log
