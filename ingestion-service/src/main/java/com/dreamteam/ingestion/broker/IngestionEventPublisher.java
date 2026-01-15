@@ -60,8 +60,8 @@ public class IngestionEventPublisher implements AutoCloseable {
             IndexRequest request = new IndexRequest(bookId, nodeId, datalakePath, contentHash);
 
             brokerClient.publish(request);
-            System.out.printf("Published IndexRequest: book=%d, path=%s, hash=%s%n",
-                    bookId, datalakePath, HashUtil.quickHash(content));
+                System.out.printf("[%s] Published IndexRequest: book=%d, path=%s, hash=%s%n",
+                    nodeId, bookId, datalakePath, HashUtil.quickHash(content));
 
         } catch (JMSException e) {
             System.err.println("Failed to publish index request for book " + bookId + ": " + e.getMessage());

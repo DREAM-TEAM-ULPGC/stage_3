@@ -29,6 +29,8 @@ public class App {
         boolean hazelcastEnabled = ConfigLoader.getBooleanProperty("hazelcast.enabled", true);
         boolean legacyTsvEnabled = ConfigLoader.getBooleanProperty("legacy.tsv.enabled", true);
 
+        String nodeId = ConfigLoader.getNodeId();
+
         // Initialize Hazelcast distributed indexer
         if (hazelcastEnabled) {
             distributedIndexer = new DistributedIndexer(datalakePath);
@@ -46,24 +48,27 @@ public class App {
 
         // Initialize event consumer for broker integration
         if (brokerEnabled) {
-            eventConsumer = new IndexingEventConsumer((bookId, path, hash) -> {
-                System.out.printf("Event-driven indexing for book %d at path %s%n", bookId, path);
+            eventConsumer = new IndexingEventConsumer((request) -> {
+                System.out.printf("[%s] Received IndexRequest from [%s]: book=%d path=%s hash=%s%n",
+                        nodeId,
+                        request.getNodeId(),
+                        request.getBookId(),
+                        request.getDatalakePath(),
+                        request.getContentHash());
                 
                 // Index into distributed Hazelcast index
                 if (distributedIndexer != null) {
-                    var result = distributedIndexer.indexBook(bookId, path, hash);
-                    System.out.printf("Distributed index result: %s%n", result);
+                    var result = distributedIndexer.indexBook(request.getBookId(), request.getDatalakePath(), request.getContentHash());
+                    System.out.printf("[%s] Distributed index result: %s%n", nodeId, result);
                 }
                 
                 // Optionally update legacy TSV index (expensive: full reindex)
                 if (legacyTsvEnabled) {
-                    service.updateBookIndex(bookId);
+                    service.updateBookIndex(request.getBookId());
                 }
             });
             eventConsumer.start();
         }
-
-        String nodeId = ConfigLoader.getNodeId();
 
         Javalin app = Javalin.create(config ->
                 config.http.defaultContentType = "application/json"

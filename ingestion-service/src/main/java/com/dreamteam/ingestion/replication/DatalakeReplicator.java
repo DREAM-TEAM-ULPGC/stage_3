@@ -74,7 +74,8 @@ public class DatalakeReplicator implements AutoCloseable {
                     .filter(ReplicationResponse::isSuccess)
                     .count();
 
-            System.out.printf("Book %d replicated to %d peer(s)%n", bookId, successCount);
+                System.out.printf("[%s] Book %d replication: attempted=%d success=%d peers=%s%n",
+                    nodeId, bookId, responses.size(), successCount, replicationClient.getPeerNodes());
 
             return (int) successCount;
 
@@ -107,9 +108,14 @@ public class DatalakeReplicator implements AutoCloseable {
 
         List<ReplicationResponse> responses = replicationClient.replicate(request);
 
-        return (int) responses.stream()
-                .filter(ReplicationResponse::isSuccess)
-                .count();
+        long successCount = responses.stream()
+            .filter(ReplicationResponse::isSuccess)
+            .count();
+
+        System.out.printf("[%s] Book %d replication: attempted=%d success=%d peers=%s%n",
+            nodeId, bookId, responses.size(), successCount, replicationClient.getPeerNodes());
+
+        return (int) successCount;
     }
 
     /**

@@ -15,7 +15,7 @@ public class IndexingEventConsumer implements AutoCloseable {
 
     @FunctionalInterface
     public interface IndexingHandler {
-        void handle(int bookId, String datalakePath, String contentHash) throws Exception;
+        void handle(IndexRequest request) throws Exception;
     }
 
     private final ReconnectingBrokerClient brokerClient;
@@ -48,7 +48,7 @@ public class IndexingEventConsumer implements AutoCloseable {
         messagesProcessed.incrementAndGet();
 
         try {
-            handler.handle(request.getBookId(), request.getDatalakePath(), request.getContentHash());
+            handler.handle(request);
         } catch (DuplicateIndexRequestException dup) {
             duplicatesSkipped.incrementAndGet();
         }

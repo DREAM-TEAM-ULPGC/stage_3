@@ -1,5 +1,6 @@
 package com.dreamteam.common.datalake;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -53,6 +54,10 @@ public class ReplicationClient implements AutoCloseable {
         for (int i = 0; i < replicasToSend; i++) {
             String peer = peerNodes.get(i);
             ReplicationResponse resp = sendToPeer(peer, request);
+            if (resp != null && !resp.isSuccess()) {
+                System.err.printf("Replication failed: book=%d peer=%s reason=%s%n",
+                        request.getBookId(), peer, resp.getMessage());
+            }
             responses.add(resp);
         }
 
@@ -92,8 +97,14 @@ public class ReplicationClient implements AutoCloseable {
             return ReplicationResponse.failure(peerBaseUrl, request.getBookId(),
                     "HTTP " + httpResponse.statusCode() + ": " + truncate(httpResponse.body(), 200));
 
-        } catch (Exception e) {
-            return ReplicationResponse.failure(peerBaseUrl, request.getBookId(), "Request failed: " + e.getMessage());
+        } catch (IOException | InterruptedException | RuntimeException e) {
+            String msg = e.getMessage();
+            if (msg == null || msg.isBlank()) {
+                msg = e.getClass().getSimpleName();
+            } else {
+                msg = e.getClass().getSimpleName() + ": " + msg;
+            }
+            return ReplicationResponse.failure(peerBaseUrl, request.getBookId(), "Request failed: " + msg);
         }
     }
 
@@ -119,7 +130,7 @@ public class ReplicationClient implements AutoCloseable {
                         .build();
                 HttpResponse<Void> resp = httpClient.send(req, HttpResponse.BodyHandlers.discarding());
                 if (resp.statusCode() == 200) healthy.add(peer);
-            } catch (Exception ignore) {
+            } catch (IOException | InterruptedException | RuntimeException ignore) {
             }
         }
         return healthy;
