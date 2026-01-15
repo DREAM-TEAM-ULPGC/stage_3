@@ -52,6 +52,7 @@ services:
       - BROKER_ENABLED=true
       - BROKER_URL=tcp://${PC1_IP}:61616
       - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=${HZ_CLUSTERNAME:-gutenberg-cluster}
       - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
       - DATALAKE_PATH=/app/datalake
       - LEGACY_TSV_ENABLED=false
@@ -75,6 +76,7 @@ services:
       - NODE_ID=search-3
       - SERVER_PORT=7003
       - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=${HZ_CLUSTERNAME:-gutenberg-cluster}
       - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
     depends_on:
       - hazelcast-3

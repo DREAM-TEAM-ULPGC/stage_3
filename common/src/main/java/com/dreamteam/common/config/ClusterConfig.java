@@ -128,7 +128,19 @@ public class ClusterConfig {
 
     /** Hazelcast cluster name */
     public static String getHazelcastClusterName() {
-        return get("hazelcast.cluster.name", "stage3-cluster");
+        // Preferred env var for our Java apps: HAZELCAST_CLUSTER_NAME
+        String name = get("hazelcast.cluster.name", null);
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+
+        // Hazelcast official Docker image uses HZ_CLUSTERNAME
+        String hzClusterName = System.getenv("HZ_CLUSTERNAME");
+        if (hzClusterName != null && !hzClusterName.isBlank()) {
+            return hzClusterName;
+        }
+
+        return "stage3-cluster";
     }
 
     /** Hazelcast member addresses for TCP/IP discovery */
