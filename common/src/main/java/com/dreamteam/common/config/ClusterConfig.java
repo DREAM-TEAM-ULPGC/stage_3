@@ -128,18 +128,8 @@ public class ClusterConfig {
 
     /** Hazelcast cluster name */
     public static String getHazelcastClusterName() {
-        // Preferred env var for our Java apps: HAZELCAST_CLUSTER_NAME
-        String name = get("hazelcast.cluster.name", null);
-        if (name != null && !name.isBlank()) {
-            return name;
-        }
-
-        // Hazelcast official Docker image uses HZ_CLUSTERNAME
-        String hzClusterName = System.getenv("HZ_CLUSTERNAME");
-        if (hzClusterName != null && !hzClusterName.isBlank()) {
-            return hzClusterName;
-        }
-
+        // Hard-coded on purpose: prevents split-brain/misconfiguration issues
+        // when different nodes/containers are started with different env vars.
         return "stage3-cluster";
     }
 

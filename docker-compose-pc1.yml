@@ -24,7 +24,7 @@ services:
     ports:
       - "5701:5701"
     environment:
-      - HZ_CLUSTERNAME=${HZ_CLUSTERNAME:-gutenberg-cluster}
+      - HZ_CLUSTERNAME=stage3-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
@@ -68,7 +68,7 @@ services:
       - BROKER_ENABLED=true
       - BROKER_URL=tcp://${PC1_IP}:61616
       - HAZELCAST_ENABLED=true
-      - HAZELCAST_CLUSTER_NAME=${HZ_CLUSTERNAME:-gutenberg-cluster}
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
       - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
       - DATALAKE_PATH=/app/datalake
       - DB_PATH=/app/datamart/datamart.db
@@ -96,7 +96,7 @@ services:
       - NODE_ID=search-1
       - SERVER_PORT=7003
       - HAZELCAST_ENABLED=true
-      - HAZELCAST_CLUSTER_NAME=${HZ_CLUSTERNAME:-gutenberg-cluster}
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
       - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
       - INDEX_PATH=/app/indexer/tsv-index
       - DB_PATH=/app/datamart/datamart.db

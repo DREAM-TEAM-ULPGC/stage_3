@@ -11,7 +11,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - MC_DEFAULT_CLUSTER=gutenberg-cluster
+      - MC_DEFAULT_CLUSTER=stage3-cluster
       - MC_DEFAULT_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
     networks:
       - gutenberg-network
@@ -28,7 +28,7 @@ services:
     ports:
       - "5701:5701"
     environment:
-      - HZ_CLUSTERNAME=gutenberg-cluster
+      - HZ_CLUSTERNAME=stage3-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-node-1,hazelcast-node-2,hazelcast-node-3
@@ -50,7 +50,7 @@ services:
     ports:
       - "5702:5701"
     environment:
-      - HZ_CLUSTERNAME=gutenberg-cluster
+      - HZ_CLUSTERNAME=stage3-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-node-1,hazelcast-node-2,hazelcast-node-3
@@ -75,7 +75,7 @@ services:
     ports:
       - "5703:5701"
     environment:
-      - HZ_CLUSTERNAME=gutenberg-cluster
+      - HZ_CLUSTERNAME=stage3-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
       - HZ_NETWORK_JOIN_TCPIP_MEMBERS=hazelcast-node-1,hazelcast-node-2,hazelcast-node-3
@@ -103,7 +103,7 @@ services:
       - "7002:7002"
     environment:
       - HAZELCAST_ENABLED=true
-      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
       - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
       - BROKER_ENABLED=true
       - BROKER_URL=tcp://activemq:61616
@@ -129,7 +129,7 @@ services:
       - "7012:7002"
     environment:
       - HAZELCAST_ENABLED=true
-      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
       - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
       - BROKER_ENABLED=true
       - BROKER_URL=tcp://activemq:61616
@@ -155,7 +155,7 @@ services:
       - "7003:7003"
     environment:
       - HAZELCAST_ENABLED=true
-      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
       - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
     volumes:
       - shared-index:/app/indexer
@@ -177,7 +177,7 @@ services:
       - "7013:7003"
     environment:
       - HAZELCAST_ENABLED=true
-      - HAZELCAST_CLUSTER_NAME=gutenberg-cluster
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
       - HAZELCAST_CLUSTER_MEMBERS=hazelcast-node-1:5701,hazelcast-node-2:5701,hazelcast-node-3:5701
     volumes:
       - shared-index:/app/indexer
