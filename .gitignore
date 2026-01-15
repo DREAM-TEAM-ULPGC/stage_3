@@ -8,8 +8,6 @@ target/
 .idea/
 .github/
 
-indexer/
-datalake/
 *.db
 control_log.txt
 
