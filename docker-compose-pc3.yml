@@ -1,0 +1,88 @@
+version: '3.8'
+
+# Multi-host (3 PCs) - PC3
+# Run on PC3 only. Requires a .env with PC1_IP, PC2_IP, PC3_IP.
+
+services:
+  hazelcast-3:
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hazelcast-3
+    ports:
+      - "5701:5701"
+    environment:
+      - HZ_CLUSTERNAME=${HZ_CLUSTERNAME:-gutenberg-cluster}
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
+      - HZ_NETWORK_PUBLICADDRESS=${PC3_IP}:5701
+      - JAVA_OPTS=-Xms256m -Xmx512m -Dhazelcast.local.publicAddress=${PC3_IP}:5701
+    volumes:
+      - hazelcast-data-3:/opt/hazelcast/data
+    restart: unless-stopped
+
+  ingestion-3:
+    build:
+      context: .
+      dockerfile: ingestion-service/Dockerfile
+    container_name: ingestion-3
+    ports:
+      - "7001:7001"
+    environment:
+      - NODE_ID=ingestion-3
+      - SERVER_PORT=7001
+      - BROKER_ENABLED=true
+      - BROKER_URL=tcp://${PC1_IP}:61616
+      - DATALAKE_DIR=/app/datalake
+      - DATALAKE_REPLICATION_FACTOR=3
+      - DATALAKE_PEERS=http://${PC1_IP}:7001,http://${PC2_IP}:7001
+    volumes:
+      - datalake:/app/datalake
+    restart: unless-stopped
+
+  indexer-3:
+    build:
+      context: .
+      dockerfile: indexer-service/Dockerfile
+    container_name: indexer-3
+    ports:
+      - "7002:7002"
+    environment:
+      - NODE_ID=indexer-3
+      - SERVER_PORT=7002
+      - BROKER_ENABLED=true
+      - BROKER_URL=tcp://${PC1_IP}:61616
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
+      - DATALAKE_PATH=/app/datalake
+      - LEGACY_TSV_ENABLED=false
+    volumes:
+      - datalake:/app/datalake
+      - indexer-local:/app/indexer
+      - datamart-local:/app/datamart
+      - metadata-local:/app/metadata
+    depends_on:
+      - hazelcast-3
+    restart: unless-stopped
+
+  search-3:
+    build:
+      context: .
+      dockerfile: search-service/Dockerfile
+    container_name: search-3
+    ports:
+      - "7003:7003"
+    environment:
+      - NODE_ID=search-3
+      - SERVER_PORT=7003
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
+    depends_on:
+      - hazelcast-3
+    restart: unless-stopped
+
+volumes:
+  hazelcast-data-3:
+  datalake:
+  indexer-local:
+  datamart-local:
+  metadata-local:

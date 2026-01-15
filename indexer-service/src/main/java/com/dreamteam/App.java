@@ -27,6 +27,7 @@ public class App {
         int port = ConfigLoader.getIntProperty("server.port", 7002);
         boolean brokerEnabled = ConfigLoader.getBooleanProperty("broker.enabled", true);
         boolean hazelcastEnabled = ConfigLoader.getBooleanProperty("hazelcast.enabled", true);
+        boolean legacyTsvEnabled = ConfigLoader.getBooleanProperty("legacy.tsv.enabled", true);
 
         // Initialize Hazelcast distributed indexer
         if (hazelcastEnabled) {
@@ -54,8 +55,10 @@ public class App {
                     System.out.printf("Distributed index result: %s%n", result);
                 }
                 
-                // Also update legacy TSV index
-                service.updateBookIndex(bookId);
+                // Optionally update legacy TSV index (expensive: full reindex)
+                if (legacyTsvEnabled) {
+                    service.updateBookIndex(bookId);
+                }
             });
             eventConsumer.start();
         }
@@ -73,6 +76,7 @@ public class App {
             status.put("service", "indexer-service");
             status.put("nodeId", nodeId);
             status.put("status", "running");
+            status.put("legacy_tsv_enabled", legacyTsvEnabled);
             if (eventConsumer != null) {
                 status.put("broker_connected", eventConsumer.isRunning());
                 status.put("messages_processed", eventConsumer.getMessagesProcessed());

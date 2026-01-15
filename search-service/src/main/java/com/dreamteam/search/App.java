@@ -81,7 +81,18 @@ public class App {
             int page = ctx.queryParamAsClass("page", Integer.class).getOrDefault(1);
             int pageSize = ctx.queryParamAsClass("pageSize", Integer.class).getOrDefault(20);
 
-            var results = engine.search(q, mode);
+            // Prefer Hazelcast distributed index when enabled.
+            // This allows running search nodes without local TSV/JSON index files.
+            java.util.List<SearchEngine.ScoredDoc> results;
+            if (distributedEngine != null) {
+                var dist = distributedEngine.search(q, mode, Integer.MAX_VALUE);
+                results = dist.stream()
+                        .map(r -> new SearchEngine.ScoredDoc(r.bookId(), r.score()))
+                        .toList();
+            } else {
+                results = engine.search(q, mode);
+            }
+
             var enriched = metadataDao.enrichAndFilter(results, author, language);
 
             int total = enriched.size();
