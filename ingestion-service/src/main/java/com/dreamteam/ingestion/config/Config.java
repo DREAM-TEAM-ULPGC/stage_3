@@ -67,4 +67,20 @@ public class Config {
 	public static String brokerTopic() {
 		return getEnvOrProp("BROKER_TOPIC", "broker.topic.ingestion", "ingestion-events");
 	}
+
+	// ==================== Hazelcast Configuration ====================
+
+	public static boolean hazelcastEnabled() {
+		String value = getEnvOrProp("HAZELCAST_ENABLED", "hazelcast.enabled", "true");
+		return Boolean.parseBoolean(value);
+	}
+
+	public static int benchmarkWorkerThreads() {
+		String value = getEnvOrProp("BENCHMARK_WORKER_THREADS", "benchmark.worker.threads", "4");
+		try {
+			return Integer.parseInt(value);
+		} catch (NumberFormatException e) {
+			return 4;
+		}
+	}
 }
