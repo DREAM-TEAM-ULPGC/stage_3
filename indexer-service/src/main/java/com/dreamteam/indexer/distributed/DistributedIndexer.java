@@ -8,11 +8,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.dreamteam.common.config.ClusterConfig;
 import com.dreamteam.common.hazelcast.DistributedIndex;
 import com.dreamteam.common.util.HashUtil;
 import com.dreamteam.indexer.broker.IndexingEventConsumer;
@@ -80,8 +80,8 @@ public class DistributedIndexer {
 
         distributedIndex.clear();
 
-        int docs = 0;
-        int terms = 0;
+        AtomicInteger docs = new AtomicInteger(0);
+        AtomicInteger terms = new AtomicInteger(0);
 
         if (!Files.exists(datalakeBase)) {
             return Map.of("status", "error", "message", "datalake path not found: " + datalakeBase);
@@ -96,31 +96,36 @@ public class DistributedIndexer {
                         .collect(Collectors.toList());
             }
 
-            for (Path body : bodies) {
-                Path bookFolder = body.getParent();
-                int bookId;
+            // Process books in parallel for better performance
+            bodies.parallelStream().forEach(body -> {
                 try {
-                    bookId = Integer.parseInt(bookFolder.getFileName().toString());
-                } catch (NumberFormatException ignore) {
-                    continue;
-                }
+                    Path bookFolder = body.getParent();
+                    int bookId;
+                    try {
+                        bookId = Integer.parseInt(bookFolder.getFileName().toString());
+                    } catch (NumberFormatException ignore) {
+                        return;
+                    }
 
-                String rel = datalakeBase.toAbsolutePath().relativize(bookFolder.toAbsolutePath()).toString().replace("\\\\", "/");
-                String raw = Files.readString(body);
-                String hash = HashUtil.sha256(raw);
+                    String rel = datalakeBase.toAbsolutePath().relativize(bookFolder.toAbsolutePath()).toString().replace("\\\\", "/");
+                    String raw = Files.readString(body);
+                    String hash = HashUtil.sha256(raw);
 
-                Map<String, Object> result = indexBook(bookId, rel, hash);
-                if ("ok".equals(result.get("status"))) {
-                    docs++;
-                    terms += (int) result.getOrDefault("termsIndexed", 0);
+                    Map<String, Object> result = indexBook(bookId, rel, hash);
+                    if ("ok".equals(result.get("status"))) {
+                        docs.incrementAndGet();
+                        terms.addAndGet((int) result.getOrDefault("termsIndexed", 0));
+                    }
+                } catch (IOException e) {
+                    System.err.printf("Error indexing %s: %s%n", body, e.getMessage());
                 }
-            }
+            });
 
             double elapsed = (System.currentTimeMillis() - start) / 1000.0;
             Map<String, Object> stats = new HashMap<>(distributedIndex.getStats());
             stats.put("status", "ok");
-            stats.put("documentsIndexed", docs);
-            stats.put("termsIndexed", terms);
+            stats.put("documentsIndexed", docs.get());
+            stats.put("termsIndexed", terms.get());
             stats.put("elapsed_seconds", elapsed);
             return stats;
 
