@@ -108,6 +108,7 @@ public class App {
 			app.get("/benchmark/status", benchmarkController::getStatus);
 			app.post("/benchmark/reset", benchmarkController::reset);
 			app.get("/benchmark/queue/size", benchmarkController::getQueueSize);
+			app.get("/benchmark/valid-books", benchmarkController::getValidBooksInfo);
 		}
 
 		System.out.printf("Ingestion Service [%s] listening on :%d, datalake=%s, broker=%s, replication=%s, hazelcast=%s%n",

@@ -18,7 +18,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
 /**
- * Simple HTTP client for datalake replication between ingestion nodes.
+ * HTTP client for datalake replication between ingestion nodes.
+ * Uses consistent hashing to distribute replicas evenly across all peers.
  * Sends POST /replicate to peer nodes.
  */
 public class ReplicationClient implements AutoCloseable {
@@ -39,7 +40,8 @@ public class ReplicationClient implements AutoCloseable {
 
     /**
      * Replicates to up to (replicationFactor - 1) peers.
-     * Peers are contacted in the configured order.
+     * Uses consistent hashing based on bookId to distribute replicas evenly.
+     * This ensures all nodes receive approximately equal number of books.
      */
     public List<ReplicationResponse> replicate(ReplicationRequest request) {
         Objects.requireNonNull(request, "request");
@@ -51,8 +53,10 @@ public class ReplicationClient implements AutoCloseable {
         int replicasToSend = Math.min(peerNodes.size(), Math.max(0, replicationFactor - 1));
         List<ReplicationResponse> responses = new ArrayList<>();
 
-        for (int i = 0; i < replicasToSend; i++) {
-            String peer = peerNodes.get(i);
+        // Use consistent hashing to select which peers get this book
+        List<String> selectedPeers = selectPeersForBook(request.getBookId(), replicasToSend);
+
+        for (String peer : selectedPeers) {
             ReplicationResponse resp = sendToPeer(peer, request);
             if (resp != null && !resp.isSuccess()) {
                 System.err.printf("Replication failed: book=%d peer=%s reason=%s%n",
@@ -62,6 +66,28 @@ public class ReplicationClient implements AutoCloseable {
         }
 
         return responses;
+    }
+
+    /**
+     * Selects 'count' peers for a book using consistent hashing.
+     * This distributes books evenly across all peers instead of always
+     * sending to the first N peers.
+     */
+    private List<String> selectPeersForBook(int bookId, int count) {
+        if (peerNodes.isEmpty() || count <= 0) {
+            return List.of();
+        }
+
+        // Use bookId to determine starting position in the peer ring
+        int startIndex = Math.abs(bookId) % peerNodes.size();
+        
+        List<String> selected = new ArrayList<>();
+        for (int i = 0; i < count && i < peerNodes.size(); i++) {
+            int index = (startIndex + i) % peerNodes.size();
+            selected.add(peerNodes.get(index));
+        }
+        
+        return selected;
     }
 
     private ReplicationResponse sendToPeer(String peerBaseUrl, ReplicationRequest request) {

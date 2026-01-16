@@ -22,9 +22,12 @@ public class BenchmarkController {
     }
 
     /**
-     * POST /benchmark/start?n=100
-     * Starts a new benchmark by enqueueing n books (1 to n) into the distributed queue.
+     * POST /benchmark/start?n=100&validated=true
+     * Starts a new benchmark by enqueueing n books into the distributed queue.
      * Should be called on ONE node - all nodes will process from the same queue.
+     * 
+     * @param n Number of books to ingest
+     * @param validated If true, only uses known valid Gutenberg IDs (reduces 404 errors)
      */
     public void startBenchmark(Context ctx) {
         String nParam = ctx.queryParam("n");
@@ -45,8 +48,22 @@ public class BenchmarkController {
             return;
         }
 
+        // Check if user wants validated IDs only
+        String validatedParam = ctx.queryParam("validated");
+        boolean validatedOnly = "true".equalsIgnoreCase(validatedParam) || "1".equals(validatedParam);
+
+        // Check available validated count
+        int knownValidCount = DistributedIngestionQueue.getKnownValidBookCount();
+        if (validatedOnly && n > knownValidCount) {
+            ctx.status(200).json(Map.of(
+                    "warning", "Requested " + n + " validated books but only " + knownValidCount + " known valid IDs available",
+                    "using_count", knownValidCount
+            ));
+            n = knownValidCount;
+        }
+
         // Start benchmark (enqueue books)
-        var info = queue.startBenchmark(n);
+        var info = queue.startBenchmark(n, validatedOnly);
 
         // Auto-start workers on this node
         queue.startWorkers();
@@ -57,6 +74,7 @@ public class BenchmarkController {
                 "total_books", info.totalBooks(),
                 "initiated_by", info.initiatedBy(),
                 "start_time", info.startTime(),
+                "validated_only", info.validatedOnly(),
                 "note", "Workers started on this node. Call POST /benchmark/workers/start on other nodes to join."
         ));
     }
@@ -121,6 +139,19 @@ public class BenchmarkController {
         ctx.status(200).json(Map.of(
                 "queue_size", queue.getQueueSize(),
                 "workers_running", queue.isRunning()
+        ));
+    }
+
+    /**
+     * GET /benchmark/valid-books
+     * Returns information about known valid Gutenberg book IDs.
+     */
+    public void getValidBooksInfo(Context ctx) {
+        int knownCount = DistributedIngestionQueue.getKnownValidBookCount();
+        ctx.status(200).json(Map.of(
+                "known_valid_count", knownCount,
+                "description", "Number of Gutenberg book IDs known to have plain text available",
+                "usage", "Add '?validated=true' to /benchmark/start to use only validated IDs"
         ));
     }
 }
