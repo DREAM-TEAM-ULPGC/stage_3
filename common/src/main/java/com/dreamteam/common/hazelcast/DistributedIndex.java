@@ -37,30 +37,40 @@ public class DistributedIndex {
      * @return number of terms indexed
      */
     public int indexDocument(int bookId, Map<String, List<Integer>> termPositions) {
-        int termsIndexed = 0;
+        if (termPositions.isEmpty()) {
+            return 0;
+        }
 
+        // OPTIMIZATION: Batch fetch all existing postings first (single network call)
+        Set<String> terms = termPositions.keySet();
+        Map<String, List<PostingEntry>> existingPostings = indexMap.getAll(terms);
+
+        // Prepare updates locally
+        Map<String, List<PostingEntry>> updates = new HashMap<>();
         for (Map.Entry<String, List<Integer>> entry : termPositions.entrySet()) {
             String term = entry.getKey();
             List<Integer> positions = entry.getValue();
 
-            // Use atomic update to add posting
-            indexMap.lock(term);
-            try {
-                List<PostingEntry> postings = indexMap.getOrDefault(term, new ArrayList<>());
-
+            // Get existing or create new list
+            List<PostingEntry> postings = existingPostings.get(term);
+            if (postings == null) {
+                postings = new ArrayList<>();
+            } else {
+                // Create mutable copy
+                postings = new ArrayList<>(postings);
                 // Remove existing entry for this book if present (re-indexing)
                 postings.removeIf(p -> p.getBookId() == bookId);
-
-                // Add new posting
-                postings.add(new PostingEntry(bookId, positions));
-
-                indexMap.put(term, postings);
-                termsIndexed++;
-
-            } finally {
-                indexMap.unlock(term);
             }
+
+            // Add new posting
+            postings.add(new PostingEntry(bookId, positions));
+            updates.put(term, postings);
         }
+
+        // OPTIMIZATION: Batch write all updates (single network call)
+        indexMap.putAll(updates);
+
+        int termsIndexed = updates.size();
 
         // Update stats
         incrementStat("total_documents");
