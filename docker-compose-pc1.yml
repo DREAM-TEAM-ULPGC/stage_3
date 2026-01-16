@@ -27,7 +27,7 @@ services:
       - HZ_CLUSTERNAME=stage3-cluster
       - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
       - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
-      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
       - HZ_NETWORK_PUBLICADDRESS=${PC1_IP}:5701
       - JAVA_OPTS=-Xms256m -Xmx512m -Dhazelcast.local.publicAddress=${PC1_IP}:5701
     volumes:
@@ -48,7 +48,7 @@ services:
       - BROKER_URL=tcp://${PC1_IP}:61616
       - DATALAKE_DIR=/app/datalake
       - DATALAKE_REPLICATION_FACTOR=3
-      - DATALAKE_PEERS=http://${PC2_IP}:7001,http://${PC3_IP}:7001
+      - DATALAKE_PEERS=http://${PC2_IP}:7001,http://${PC3_IP}:7001,http://${PC4_IP}:7001,http://${PC5_IP}:7001,http://${PC6_IP}:7001
     volumes:
       - datalake:/app/datalake
     depends_on:
@@ -69,7 +69,7 @@ services:
       - BROKER_URL=tcp://${PC1_IP}:61616
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=stage3-cluster
-      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
       - DATALAKE_PATH=/app/datalake
       - DB_PATH=/app/datamart/datamart.db
       - INDEX_OUTPUT_DIR=/app/indexer/tsv-index
@@ -97,7 +97,7 @@ services:
       - SERVER_PORT=7003
       - HAZELCAST_ENABLED=true
       - HAZELCAST_CLUSTER_NAME=stage3-cluster
-      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
       - INDEX_PATH=/app/indexer/tsv-index
       - DB_PATH=/app/datamart/datamart.db
     volumes:
