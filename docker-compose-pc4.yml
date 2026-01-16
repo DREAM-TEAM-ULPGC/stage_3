@@ -1,0 +1,91 @@
+version: '3.8'
+
+# Multi-host (3 PCs) - PC2
+# Run on PC2 only. Requires a .env with PC1_IP, PC2_IP, PC3_IP.
+
+services:
+  hazelcast-4:
+    image: hazelcast/hazelcast:5.3.6
+    container_name: hazelcast-4
+    ports:
+      - "5701:5701"
+    environment:
+      - HZ_CLUSTERNAME=stage3-cluster
+      - HZ_NETWORK_JOIN_TCPIP_ENABLED=true
+      - HZ_NETWORK_JOIN_MULTICAST_ENABLED=false
+      - HZ_NETWORK_JOIN_TCPIP_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
+      - HZ_NETWORK_PUBLICADDRESS=${PC4_IP}:5701
+      - JAVA_OPTS=-Xms256m -Xmx512m -Dhazelcast.local.publicAddress=${PC4_IP}:5701
+    volumes:
+      - hazelcast-data-4:/opt/hazelcast/data
+    restart: unless-stopped
+
+  ingestion-4:
+    build:
+      context: .
+      dockerfile: ingestion-service/Dockerfile
+    container_name: ingestion-4
+    ports:
+      - "7001:7001"
+    environment:
+      - NODE_ID=ingestion-4
+      - SERVER_PORT=7001
+      - BROKER_ENABLED=true
+      - BROKER_URL=tcp://${PC1_IP}:61616
+      - DATALAKE_DIR=/app/datalake
+      - DATALAKE_REPLICATION_FACTOR=3
+      - DATALAKE_PEERS=http://${PC1_IP}:7001,http://${PC2_IP}:7001,http://${PC3_IP}:7001,http://${PC5_IP}:7001,http://${PC6_IP}:7001
+    volumes:
+      - datalake:/app/datalake
+    restart: unless-stopped
+
+  indexer-4:
+    build:
+      context: .
+      dockerfile: indexer-service/Dockerfile
+    container_name: indexer-4
+    ports:
+      - "7002:7002"
+    environment:
+      - NODE_ID=indexer-4
+      - SERVER_PORT=7002
+      - BROKER_ENABLED=true
+      - BROKER_URL=tcp://${PC1_IP}:61616
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
+      - DATALAKE_PATH=/app/datalake
+      - LEGACY_TSV_ENABLED=false
+    volumes:
+      - datalake:/app/datalake
+      - indexer-local:/app/indexer
+      - datamart-local:/app/datamart
+      - metadata-local:/app/metadata
+    depends_on:
+      - hazelcast-4
+    restart: unless-stopped
+
+  search-4:
+    build:
+      context: .
+      dockerfile: search-service/Dockerfile
+    container_name: search-4
+    ports:
+      - "7003:7003"
+    environment:
+      - NODE_ID=search-4
+      - SERVER_PORT=7003
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_CLUSTER_NAME=stage3-cluster
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
+      # db/index are optional when using Hazelcast-distributed search
+    depends_on:
+      - hazelcast-4
+    restart: unless-stopped
+
+volumes:
+  hazelcast-data-4:
+  datalake:
+  indexer-local:
+  datamart-local:
+  metadata-local:
