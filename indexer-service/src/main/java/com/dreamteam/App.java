@@ -48,6 +48,7 @@ public class App {
 
         // Initialize event consumer for broker integration
         if (brokerEnabled) {
+            final String finalDatalakePath = datalakePath;
             eventConsumer = new IndexingEventConsumer((request) -> {
                 System.out.printf("[%s] Received IndexRequest from [%s]: book=%d path=%s hash=%s%n",
                         nodeId,
@@ -56,10 +57,23 @@ public class App {
                         request.getDatalakePath(),
                         request.getContentHash());
                 
+                // Check if book exists locally before indexing
+                java.nio.file.Path localBookPath = java.nio.file.Paths.get(finalDatalakePath, request.getDatalakePath(), "body.txt");
+                if (!java.nio.file.Files.exists(localBookPath)) {
+                    System.out.printf("[%s] Skipping book %d: not in local datalake%n", nodeId, request.getBookId());
+                    return;
+                }
+                
                 // Index into distributed Hazelcast index
                 if (distributedIndexer != null) {
                     var result = distributedIndexer.indexBook(request.getBookId(), request.getDatalakePath(), request.getContentHash());
-                    System.out.printf("[%s] Distributed index result: %s%n", nodeId, result);
+                    if ("ok".equals(result.get("status"))) {
+                        System.out.printf("[%s] ✓ Book %d indexed successfully (%d terms)%n", 
+                                nodeId, request.getBookId(), result.get("termsIndexed"));
+                    } else {
+                        System.out.printf("[%s] ✗ Book %d indexing failed: %s%n", 
+                                nodeId, request.getBookId(), result.get("message"));
+                    }
                 }
                 
                 // Optionally update legacy TSV index (expensive: full reindex)
