@@ -116,6 +116,8 @@ public class DistributedIndexer {
                         docs.incrementAndGet();
                         terms.addAndGet((int) result.getOrDefault("termsIndexed", 0));
                     }
+                } catch (IndexingEventConsumer.DuplicateIndexRequestException e) {
+                    // Skip already processed documents during rebuild
                 } catch (IOException e) {
                     System.err.printf("Error indexing %s: %s%n", body, e.getMessage());
                 }
