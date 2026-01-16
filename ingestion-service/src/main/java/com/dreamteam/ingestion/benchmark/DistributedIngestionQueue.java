@@ -1,6 +1,5 @@
 package com.dreamteam.ingestion.benchmark;
 
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -9,7 +8,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.dreamteam.common.hazelcast.HazelcastManager;
 import com.dreamteam.ingestion.config.Config;
-import com.dreamteam.ingestion.core.GutenbergBookValidator;
 import com.dreamteam.ingestion.core.IngestionService;
 import com.hazelcast.collection.IQueue;
 import com.hazelcast.core.HazelcastInstance;
@@ -66,17 +64,6 @@ public class DistributedIngestionQueue implements AutoCloseable {
      * @return BenchmarkInfo with session details
      */
     public BenchmarkInfo startBenchmark(int n) {
-        return startBenchmark(n, false);
-    }
-
-    /**
-     * Starts a new benchmark by enqueueing book IDs.
-     * 
-     * @param n Number of books to ingest
-     * @param validatedOnly If true, only uses known valid Gutenberg IDs (reduces errors)
-     * @return BenchmarkInfo with session details
-     */
-    public BenchmarkInfo startBenchmark(int n, boolean validatedOnly) {
         // Clear previous benchmark data
         bookQueue.clear();
         statsMap.clear();
@@ -89,34 +76,16 @@ public class DistributedIngestionQueue implements AutoCloseable {
         statsMap.put("start_time", startTime);
         statsMap.put("total_books", (long) n);
         statsMap.put("status", 1L); // 1 = running
-        statsMap.put("validated_only", validatedOnly ? 1L : 0L);
 
-        // Get book IDs to ingest
-        List<Integer> bookIds;
-        if (validatedOnly) {
-            // Use only known valid Gutenberg IDs (avoids 404 errors)
-            bookIds = GutenbergBookValidator.getValidBookIds(n);
-            System.out.printf("[%s] Using %d validated Gutenberg IDs (requested %d)%n", 
-                    nodeId, bookIds.size(), n);
-        } else {
-            // Use sequential IDs 1 to n (may include invalid IDs)
-            bookIds = java.util.stream.IntStream.rangeClosed(1, n)
-                    .boxed()
-                    .toList();
+        // Enqueue all book IDs (1 to n)
+        for (int i = 1; i <= n; i++) {
+            bookQueue.offer(i);
         }
 
-        // Enqueue all book IDs
-        for (int bookId : bookIds) {
-            bookQueue.offer(bookId);
-        }
+        System.out.printf("[%s] Benchmark started: id=%s, books=%d, queue_size=%d%n",
+                nodeId, benchmarkId, n, bookQueue.size());
 
-        int actualCount = bookIds.size();
-        statsMap.put("total_books", (long) actualCount);
-
-        System.out.printf("[%s] Benchmark started: id=%s, books=%d, queue_size=%d, validated=%s%n",
-                nodeId, benchmarkId, actualCount, bookQueue.size(), validatedOnly);
-
-        return new BenchmarkInfo(benchmarkId, actualCount, startTime, "started", nodeId, validatedOnly);
+        return new BenchmarkInfo(benchmarkId, n, startTime, "started", nodeId);
     }
 
     /**
@@ -320,15 +289,8 @@ public class DistributedIngestionQueue implements AutoCloseable {
             int totalBooks,
             long startTime,
             String status,
-            String initiatedBy,
-            boolean validatedOnly
-    ) {
-        // Constructor for backwards compatibility
-        public BenchmarkInfo(String benchmarkId, int totalBooks, long startTime, 
-                             String status, String initiatedBy) {
-            this(benchmarkId, totalBooks, startTime, status, initiatedBy, false);
-        }
-    }
+            String initiatedBy
+    ) {}
 
     public record BenchmarkStatus(
             String benchmarkId,
@@ -342,11 +304,4 @@ public class DistributedIngestionQueue implements AutoCloseable {
             String nodeBreakdown,
             boolean localWorkersRunning
     ) {}
-
-    /**
-     * Returns the count of known valid Gutenberg book IDs.
-     */
-    public static int getKnownValidBookCount() {
-        return GutenbergBookValidator.getKnownValidCount();
-    }
 }
