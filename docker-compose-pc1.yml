@@ -49,6 +49,9 @@ services:
       - DATALAKE_DIR=/app/datalake
       - DATALAKE_REPLICATION_FACTOR=3
       - DATALAKE_PEERS=http://${PC2_IP}:7001,http://${PC3_IP}:7001,http://${PC4_IP}:7001,http://${PC5_IP}:7001,http://${PC6_IP}:7001
+      - HAZELCAST_ENABLED=true
+      - HAZELCAST_MEMBERS=${PC1_IP}:5701,${PC2_IP}:5701,${PC3_IP}:5701,${PC4_IP}:5701,${PC5_IP}:5701,${PC6_IP}:5701
+      - BENCHMARK_WORKER_THREADS=4
     volumes:
       - datalake:/app/datalake
     depends_on:
