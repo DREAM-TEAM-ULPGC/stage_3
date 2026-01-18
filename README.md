@@ -1,828 +1,335 @@
-# Big Data Pipeline - Stage 3: Building a Cluster Architecture
+# Big Data Pipeline - Stage 3
 
-A distributed, fault-tolerant search engine implementing a cluster architecture with horizontal scaling, data replication, event-driven communication, and automatic failover capabilities for the Big Data course at ULPGC.
+A distributed, microservices-based data processing pipeline for ingesting (crawling), indexing, and searching book content from the Gutenberg Project — now deployed as a **6-node cluster** with **ActiveMQ**, **Nginx**, and **Hazelcast**.
 
 ## Table of Contents
 
-- [Introduction](#introduction)
 - [Architecture Overview](#architecture-overview)
-- [System Topology](#system-topology)
-- [Components](#components)
-  - [Distributed Datalake](#distributed-datalake)
-  - [In-Memory Inverted Index (Hazelcast)](#in-memory-inverted-index-hazelcast)
-  - [Message Broker (ActiveMQ)](#message-broker-activemq)
-  - [Load Balancer (NGINX)](#load-balancer-nginx)
 - [Services](#services)
-- [Control Flow](#control-flow)
 - [Prerequisites](#prerequisites)
 - [Building the Project](#building-the-project)
-- [Deployment Options](#deployment-options)
-- [Benchmarking](#benchmarking)
+- [Running the Services](#running-the-services)
 - [API Documentation](#api-documentation)
 - [Configuration](#configuration)
 - [Project Structure](#project-structure)
-- [Video Demonstration](#video-demonstration)
-- [Team](#team)
-
-## Introduction
-
-Stage 3 evolves the modular architecture from Stage 2 into a **distributed cluster** where scalability and fault tolerance are inherent properties of the system design. The cluster operates reliably under high load, tolerates individual node failures, and maintains consistent search results across replicas.
-
-### Objectives Achieved
-
-- **Horizontal Scaling**: Workloads distributed across multiple nodes
-- **Data Replication**: In-memory index and datalake replicated for fault tolerance
-- **Low-Latency Queries**: Consistent performance under increasing load
-- **Fault Tolerance**: Automatic recovery from node failures
-- **Event-Driven Architecture**: Asynchronous communication via message broker
 
 ## Architecture Overview
 
-```
-                           ┌─────────────────────┐
-                           │    Load Balancer    │
-                           │       (NGINX)       │
-                           └──────────┬──────────┘
-                                      │
-              ┌───────────────────────┼───────────────────────┐
-              │                       │                       │
-              ▼                       ▼                       ▼
-    ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-    │ Search Service  │     │ Search Service  │     │ Search Service  │
-    │    Instance 1   │     │    Instance 2   │     │    Instance N   │
-    └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-             │                       │                       │
-             └───────────────────────┼───────────────────────┘
-                                     │
-                    ┌────────────────┴────────────────┐
-                    │                                 │
-                    ▼                                 ▼
-    ┌───────────────────────────┐     ┌───────────────────────────┐
-    │   Hazelcast Cluster       │     │     Message Broker        │
-    │  (In-Memory Inverted      │     │      (ActiveMQ)           │
-    │       Index)              │     │                           │
-    │  ┌───────┐ ┌───────┐      │     │  ┌─────────────────────┐  │
-    │  │Shard 1│ │Shard 2│ ...  │     │  │ books.ingested      │  │
-    │  │Primary│ │Primary│      │     │  │ books.indexed       │  │
-    │  │Replica│ │Replica│      │     │  │ reindex.request     │  │
-    │  └───────┘ └───────┘      │     │  └─────────────────────┘  │
-    └───────────────────────────┘     └───────────────────────────┘
-                    ▲                                 ▲
-                    │                                 │
-    ┌───────────────┴─────────────────────────────────┴───────────────┐
-    │                                                                 │
-    │     ┌─────────────────┐     ┌─────────────────┐                 │
-    │     │Ingestion Service│     │ Indexer Service │                 │
-    │     │   (Crawlers)    │     │   (Indexers)    │                 │
-    │     └────────┬────────┘     └────────┬────────┘                 │
-    │              │                       │                          │
-    │              ▼                       ▼                          │
-    │     ┌─────────────────────────────────────────┐                 │
-    │     │         Distributed Datalake            │                 │
-    │     │  ┌─────────┐ ┌─────────┐ ┌─────────┐    │                 │
-    │     │  │Partition│ │Partition│ │Partition│    │                 │
-    │     │  │   1     │ │   2     │ │   N     │    │                 │
-    │     │  │(R=2)    │ │(R=2)    │ │(R=2)    │    │                 │
-    │     │  └─────────┘ └─────────┘ └─────────┘    │                 │
-    │     └─────────────────────────────────────────┘                 │
-    └─────────────────────────────────────────────────────────────────┘
-```
+Stage 3 evolves the pipeline into a **cluster of 6 PCs**:
 
-## System Topology
+- **PC1 (Master node)**: runs the cluster infrastructure (**ActiveMQ broker**, **Nginx**, **Hazelcast**) plus the application services (**crawler**, **indexer**, **search**).
+- **PC2–PC6 (Worker nodes)**: run only the application services (**crawler**, **indexer**, **search**).
 
-We have adopted a **multi-service node configuration** where related services coexist on the same machine to improve data locality and reduce latency.
+High-level layout:
 
-### Topology Justification
 
-| Aspect | Decision | Rationale |
-|--------|----------|-----------|
-| **Node Type** | Multi-service | Reduced inter-node communication, better data locality |
-| **Replication Factor** | R=2 | Balance between fault tolerance and resource usage |
-| **Sharding Strategy** | Hash-based | Even distribution of terms across nodes |
-| **Load Balancing** | Least connections | Better handling of variable query complexity |
+                                             ┌─────────────────────┐
+                                             │    Load Balancer    │
+                                             │       (NGINX)       │
+                                             └──────────┬──────────┘
+                                                        │
+                                ┌───────────────────────┼───────────────────────┐
+                                │                       │                       │
+                                ▼                       ▼                       ▼
+                      ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+                      │ Search Service  │     │ Search Service  │     │ Search Service  │
+                      │    Instance 1   │     │    Instance 2   │     │    Instance N   │
+                      └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+                               │                       │                       │
+                               └───────────────────────┼───────────────────────┘
+                                                       │
+                                      ┌────────────────┴────────────────┐
+                                      │                                 │
+                                      ▼                                 ▼
+                      ┌───────────────────────────┐     ┌───────────────────────────┐
+                      │   Hazelcast Cluster       │     │     Message Broker        │
+                      │  (In-Memory Inverted      │     │      (ActiveMQ)           │
+                      │       Index)              │     │                           │
+                      │  ┌───────┐ ┌───────┐      │     │  ┌─────────────────────┐  │
+                      │  │Shard 1│ │Shard 2│ ...  │     │  │ books.ingested      │  │
+                      │  │Primary│ │Primary│      │     │  │ books.indexed       │  │
+                      │  │Replica│ │Replica│      │     │  │ reindex.request     │  │
+                      │  └───────┘ └───────┘      │     │  └─────────────────────┘  │
+                      └───────────────────────────┘     └───────────────────────────┘
+                                      ▲                                 ▲
+                                      │                                 │
+                      ┌───────────────┴─────────────────────────────────┴───────────────┐
+                      │                                                                 │
+                      │     ┌─────────────────┐     ┌─────────────────┐                 │
+                      │     │Ingestion Service│     │ Indexer Service │                 │
+                      │     │   (Crawlers)    │     │   (Indexers)    │                 │
+                      │     └────────┬────────┘     └────────┬────────┘                 │
+                      │              │                       │                          │
+                      │              ▼                       ▼                          │
+                      │     ┌─────────────────────────────────────────┐                 │
+                      │     │         Distributed Datalake            │                 │
+                      │     │  ┌─────────┐ ┌─────────┐ ┌─────────┐    │                 │
+                      │     │  │Partition│ │Partition│ │Partition│    │                 │
+                      │     │  │   1     │ │   2     │ │   N     │    │                 │
+                      │     │  │(R=2)    │ │(R=2)    │ │(R=2)    │    │                 │
+                      │     │  └─────────┘ └─────────┘ └─────────┘    │                 │
+                      │     └─────────────────────────────────────────┘                 │
+                      └─────────────────────────────────────────────────────────────────┘
 
-### Cluster Configuration (6 Nodes)
+### Data Flow
 
-| Node | Role | Services | IP Address |
-|------|------|----------|------------|
-| PC1 | Master | NGINX, Hazelcast, ActiveMQ | 10.6.130.101 |
-| PC2 | Worker | Ingestion, Hazelcast | 10.6.130.102 |
-| PC3 | Worker | Ingestion, Hazelcast | 10.6.130.103 |
-| PC4 | Worker | Indexer, Hazelcast | 10.6.130.104 |
-| PC5 | Worker | Indexer, Search, Hazelcast | 10.6.130.105 |
-| PC6 | Worker | Search (x2), Hazelcast | 10.6.130.106 |
+1. **Crawling / Ingestion**
+   - Crawler services download books from the Gutenberg Project.
+   - Raw files are stored into the **datalake**, which is **replicated across the cluster**.
+   - The crawling stage tolerates worker node shutdowns/restarts: crawl jobs are distributed through ActiveMQ, and if a consumer goes down, pending/unacknowledged messages are redelivered to remaining crawler nodes.
 
-## Components
+2. **Indexing**
+   - Indexers create/update the inverted index and metadata catalog.
+   - Indexing is **multi-threaded** for better throughput and latency.
 
-### Distributed Datalake
-
-The datalake is partitioned across crawler nodes with cross-node replication for durability.
-
-**Features:**
-- Partitioned storage across ingestion nodes
-- Configurable replication factor (R=2 default)
-- Automatic replication on document ingestion
-- Data locality for indexing operations
-
-**Replication Strategy:**
-```java
-public class DatalakePartition {
-    private final int replicationFactor = 2;
-    private final List<String> peerNodes;
-    
-    public void storeDocument(String bookId, String content) {
-        // Store locally
-        localStorage.save(bookId, content);
-        
-        // Replicate to R-1 peer nodes
-        for (int i = 0; i < replicationFactor - 1; i++) {
-            String peer = selectPeerNode(bookId, i);
-            replicateToNode(peer, bookId, content);
-        }
-        
-        // Publish event to broker
-        messageBroker.publish("books.ingested", 
-            new IngestionEvent(bookId, getNodeId()));
-    }
-}
-```
-
-### In-Memory Inverted Index (Hazelcast)
-
-The global inverted index is maintained entirely in memory using Hazelcast's distributed MultiMap.
-
-**Configuration:**
-```java
-Config config = new Config();
-config.setClusterName("search-cluster");
-config.getNetworkConfig()
-    .setPort(5701)
-    .setPortAutoIncrement(true);
-
-// MultiMap configuration for inverted index
-MultiMapConfig multiMapConfig = new MultiMapConfig("inverted-index");
-multiMapConfig.setBackupCount(2);        // Synchronous replicas
-multiMapConfig.setAsyncBackupCount(1);   // Async replica
-config.addMultiMapConfig(multiMapConfig);
-
-HazelcastInstance hz = Hazelcast.newHazelcastInstance(config);
-```
-
-**Concurrency Control with FencedLock:**
-```java
-public void indexDocument(String bookId, List<String> tokens) {
-    for (String token : tokens) {
-        // Use FencedLock for safe concurrent writes
-        FencedLock lock = hz.getCPSubsystem().getLock("lock:index:" + token);
-        lock.lock();
-        try {
-            invertedIndex.put(token, bookId);
-        } finally {
-            lock.unlock();
-        }
-    }
-}
-```
-
-**Features:**
-- Replicated sharding strategy (primary + replicas)
-- Automatic partition rebalancing on node join/leave
-- Near-cache for read-heavy search nodes
-- FencedLock for concurrent write safety
-
-### Message Broker (ActiveMQ)
-
-Enables event-driven, asynchronous communication between services.
-
-**Docker Configuration:**
-```yaml
-# docker/docker-compose-broker.yml
-version: '3'
-services:
-  activemq:
-    image: rmohr/activemq:latest
-    container_name: activemq
-    restart: always
-    ports:
-      - "61616:61616"  # JMS protocol
-      - "8161:8161"    # Web console
-    environment:
-      - ACTIVEMQ_ADMIN_LOGIN=admin
-      - ACTIVEMQ_ADMIN_PASSWORD=admin
-    networks:
-      - search_net
-```
-
-**Topics/Queues:**
-
-| Queue Name | Publisher | Consumer | Purpose |
-|------------|-----------|----------|---------|
-| `books.ingested` | Ingestion Service | Indexer Service | New document ready for indexing |
-| `books.indexed` | Indexer Service | Search Service | Index updated notification |
-| `reindex.request` | Admin/Controller | Indexer Service | Trigger full reindex |
-
-**Message Producer (Ingestion Service):**
-```java
-public class IngestionEventPublisher {
-    private final Session session;
-    private final MessageProducer producer;
-    
-    public void publishIngestionEvent(String bookId) {
-        TextMessage message = session.createTextMessage();
-        message.setText(String.format(
-            "{\"bookId\": \"%s\", \"status\": \"READY\", \"timestamp\": %d}",
-            bookId, System.currentTimeMillis()
-        ));
-        producer.send(message);
-    }
-}
-```
-
-**Message Consumer (Indexer Service):**
-```java
-public class IndexingEventConsumer implements MessageListener {
-    @Override
-    public void onMessage(Message message) {
-        if (message instanceof TextMessage textMsg) {
-            IngestionEvent event = parseEvent(textMsg.getText());
-            
-            // Idempotent check using document hash
-            if (!isAlreadyIndexed(event.getBookId())) {
-                String content = datalake.getDocument(event.getBookId());
-                List<String> tokens = tokenize(content);
-                indexUpdater.indexDocument(event.getBookId(), tokens);
-            }
-        }
-    }
-}
-```
-
-**Delivery Guarantees:**
-- At-least-once delivery
-- Persistent queues for durability
-- Idempotent consumers using document hash
-
-### Load Balancer (NGINX)
-
-Distributes search requests across available Search Service instances.
-
-**Configuration (nginx/nginx.conf):**
-```nginx
-http {
-    upstream search_cluster {
-        least_conn;
-        server search1:7003 max_fails=3 fail_timeout=30s;
-        server search2:7003 max_fails=3 fail_timeout=30s;
-        server search3:7003 max_fails=3 fail_timeout=30s;
-    }
-
-    server {
-        listen 80;
-        
-        location /search {
-            proxy_pass http://search_cluster;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_connect_timeout 5s;
-            proxy_read_timeout 30s;
-        }
-        
-        location /health {
-            proxy_pass http://search_cluster;
-        }
-    }
-}
-```
-
-**Multi-Host Configuration (nginx/nginx.multihost.conf):**
-```nginx
-upstream search_cluster {
-    least_conn;
-    server 10.6.130.105:7003 max_fails=3 fail_timeout=30s;
-    server 10.6.130.106:7003 max_fails=3 fail_timeout=30s;
-    server 10.6.130.106:7004 max_fails=3 fail_timeout=30s;
-}
-```
-
-**Features:**
-- Least connections routing algorithm
-- Active health checks (max_fails=3, fail_timeout=30s)
-- Automatic removal of failed nodes
-- Dynamic scaling support
+3. **Search**
+   - Search services serve queries using the index + metadata store.
+   - Nginx exposes a single entrypoint while search instances can scale horizontally.
 
 ## Services
 
-### Ingestion Service (Crawler) - Port 7001
+### Cluster Infrastructure (Master only)
 
-Handles document retrieval from Project Gutenberg with distributed coordination.
+#### ActiveMQ Broker
+Message broker used to distribute work (crawl/index tasks) among nodes and enable queue redistribution when nodes join/leave.
 
-**Responsibilities:**
-- Download books from Gutenberg mirror
-- Store in local datalake partition
-- Replicate to peer nodes (R-1 copies)
-- Publish `books.ingested` events
-- Coordinate to avoid duplicate downloads
+#### Hazelcast
+Cluster coordination and distributed data features, used to support replication and cluster behavior.
 
-**Endpoints:**
+#### Nginx
+Single HTTP entrypoint and load balancer in front of the cluster.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/crawl/start` | POST | Start crawling books |
-| `/api/crawl/stop` | POST | Stop crawling |
-| `/api/crawl/status` | GET | Get crawling status |
-| `/api/ingest/{book_id}` | POST | Ingest specific book |
-| `/api/ingest/batch` | POST | Batch ingest multiple books |
-| `/status` | GET | Service health check |
-| `/datalake/stats` | GET | Datalake partition statistics |
+### Application Services (All nodes)
 
-### Indexer Service - Port 7002
+#### Ingestion Service
+Downloads books from Project Gutenberg and writes them into the distributed datalake.
 
-Creates and maintains the distributed inverted index.
+#### Indexer Service
+Builds searchable structures from the datalake. Creates an inverted index for full-text search, generating a metadata catalog, performing multi-threaded indexing for better throughput and efficiency, and supporting both incremental updates and full rebuilds.
 
-**Responsibilities:**
-- Subscribe to `books.ingested` queue
-- Retrieve documents from datalake
-- Tokenize and index content
-- Update Hazelcast MultiMap with FencedLock
-- Handle idempotent message processing
-- Publish `books.indexed` events
-
-**Endpoints:**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/index/build` | POST | Build/rebuild full index |
-| `/api/index/update/{book_id}` | POST | Index specific book |
-| `/api/index/status` | GET | Indexing status |
-| `/api/index/stats` | GET | Index distribution stats |
-| `/status` | GET | Service health check |
-
-### Search Service - Port 7003
-
-Handles search queries with distributed index lookups.
-
-**Responsibilities:**
-- Receive queries via load balancer
-- Query local Hazelcast shard
-- Perform distributed lookups for remote shards
-- Merge and rank results using TF-IDF
-- Cache frequent queries
-
-**Endpoints:**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/search` | GET | Full-text search |
-| `/api/book/{id}` | GET | Get book metadata |
-| `/api/books` | GET | List all books |
-| `/admin/reload` | POST | Reload index cache |
-| `/health` | GET | Health check (for NGINX) |
-| `/status` | GET | Service status |
-
-**Search Parameters:**
-```
-GET /api/search?q={query}&mode={and|or}&author={author}&language={language}&page={page}&size={size}
-```
-
-## Control Flow
-
-### 1. Crawling (Ingestion)
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ Download │───▶│  Store   │───▶│Replicate │───▶│ Publish  │
-│   Book   │    │ Locally  │    │ to Peers │    │  Event   │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-                     │                               │
-                     ▼                               ▼
-              Local Datalake              Message Broker
-               Partition                (books.ingested)
-```
-
-### 2. Indexing
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ Consume  │───▶│ Retrieve │───▶│ Tokenize │───▶│  Update  │
-│  Event   │    │   Doc    │    │ Content  │    │  Index   │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-      │               │                               │
-      ▼               ▼                               ▼
-Message Broker   Datalake              Hazelcast MultiMap
-                                       (with FencedLock)
-```
-
-### 3. Searching
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  Query   │───▶│  Route   │───▶│  Search  │───▶│  Merge   │
-│ Request  │    │ (NGINX)  │    │  Shards  │    │  Results │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-                     │               │
-                     ▼               ▼
-              Load Balancer   Hazelcast Cluster
-```
+#### Search Service
+Provides search functionality over indexed content. Includes full-text search with AND/OR modes, metadata-based filtering, pagination, index reload/refresh support, and a dedicated benchmark endpoint for performance evaluation
 
 ## Prerequisites
 
 - **Java 17** or higher
 - **Maven 3.6+**
-- **Docker** and **Docker Compose**
-- **PowerShell** (for Windows cluster scripts)
-- **6 networked machines** (for full distributed deployment)
+- **Docker + Docker Compose** (Stage 3 is designed to run as containers)
+- **Network connectivity between the 6 PCs**
+- **Internet connection** (for downloading books from Gutenberg)
 
 ## Building the Project
 
-### Build All Modules
+From the repository root, you can build everything via Maven:
 
 ```bash
-# Build entire project including common module
-mvn clean package -DskipTests
+mvn clean package
 
-# Or build individual services
-cd common && mvn clean install
-cd ../ingestion-service && mvn clean package
-cd ../indexer-service && mvn clean package
-cd ../search-service && mvn clean package
+
+# Build Ingestion Service
+cd ../ingestion-service
+mvn clean package
+
+# Build Indexer Service
+cd ../indexer-service
+mvn clean package
+
+# Build Search Service
+cd ../search-service
+mvn clean package
 ```
 
-### Build Docker Images
+Each service will generate a fat JAR in its respective `target/` directory.
 
-```bash
-# Build all service images
-docker-compose -f docker-compose-full.yml build
+## Running the Services
+
+This stage provides per-node Docker Compose files (PC1–PC6).
+
+### Deployment of the cluster
+
+For a correct operation of the cluster, these are the points to follow:
+
+1. Clone the repository on each PC (PC1..PC6).
+2. Configure the IP addresses in .env and also in  nginx.multihost.conf by replacing the variables "PCX_IP" with the real address for each PC.
+3. Start the compose file matching each PC.
+
+   On PC1:
+
+   ```
+   docker compose -f docker-compose-pc1.yml up -d --build
+   ```
+
+   Rest of PC's:
+
+   ```
+   docker compose -f docker-compose-pc2.yml up -d --build
+   docker compose -f docker-compose-pc3.yml up -d --build
+   docker compose -f docker-compose-pc4.yml up -d --build
+   docker compose -f docker-compose-pc5.yml up -d --build
+   docker compose -f docker-compose-pc6.yml up -d --build
+   ```
+
+### Verify Services are Running
+
+To verify the satatus of each service, simply write the URL in any browser as shown below. 
+
 ```
-
-## Deployment Options
-
-### Option 1: Full Stack (Single Machine - Development)
-
-```bash
-docker-compose -f docker-compose-full.yml up -d
-```
-
-### Option 2: Hazelcast Cluster Only
-
-```bash
-docker-compose -f docker-compose-hazelcast.yml up -d
-```
-
-### Option 3: Distributed Multi-Host Deployment (Production)
-
-Deploy across 6 machines using individual compose files:
-
-```bash
-# On PC1 (Master - Load Balancer + Hazelcast + ActiveMQ)
-docker-compose -f docker-compose-pc1.yml up -d
-
-# On PC2 (Ingestion + Hazelcast)
-docker-compose -f docker-compose-pc2.yml up -d
-
-# On PC3 (Ingestion + Hazelcast)
-docker-compose -f docker-compose-pc3.yml up -d
-
-# On PC4 (Indexer + Hazelcast)
-docker-compose -f docker-compose-pc4.yml up -d
-
-# On PC5 (Indexer + Search + Hazelcast)
-docker-compose -f docker-compose-pc5.yml up -d
-
-# On PC6 (Search x2 + Hazelcast)
-docker-compose -f docker-compose-pc6.yml up -d
-```
-
-### Option 4: Using PowerShell Script
-
-```powershell
-.\start-cluster.ps1
-```
-
-### Verify Services
-
-```bash
-# Health checks
-curl http://localhost:7001/status  # Ingestion
-curl http://localhost:7002/status  # Indexer
-curl http://localhost:7003/status  # Search
-curl http://localhost/health       # Load Balancer
-```
-
-## Benchmarking
-
-### Experimental Setup
-
-| Parameter | Value |
-|-----------|-------|
-| **Cluster Configuration** | 1 Master + 5 Workers |
-| **Total Nodes** | 6 |
-| **CPU per Node** | 4 cores (Intel i5-10400) |
-| **RAM per Node** | 8 GB DDR4 |
-| **Network** | Gigabit Ethernet (1 Gbps) |
-| **Docker Version** | 24.0.7 |
-| **Java Version** | OpenJDK 17.0.2 |
-| **Dataset Size** | 1,247 books from Project Gutenberg (~850 MB) |
-| **Replication Factor** | R=2 |
-| **Hazelcast Partitions** | 271 (default) |
-
-### Cluster Node Distribution
-
-| Node | Role | Services | IP |
-|------|------|----------|-----|
-| PC1 | Master | NGINX, Hazelcast, ActiveMQ | 10.6.130.101 |
-| PC2 | Worker | Ingestion, Hazelcast | 10.6.130.102 |
-| PC3 | Worker | Ingestion, Hazelcast | 10.6.130.103 |
-| PC4 | Worker | Indexer, Hazelcast | 10.6.130.104 |
-| PC5 | Worker | Indexer, Search, Hazelcast | 10.6.130.105 |
-| PC6 | Worker | Search (x2), Hazelcast | 10.6.130.106 |
-
-### Scalability Test Results
-
-| Workers | Ingestion (docs/s) | Query Latency (ms) | Throughput (req/s) | CPU Avg (%) |
-|---------|-------------------|-------------------|-------------------|-------------|
-| 1 | 187 | 42 | 285 | 78 |
-| 2 | 356 | 31 | 520 | 72 |
-| 3 | 524 | 25 | 745 | 68 |
-| 4 | 689 | 21 | 956 | 65 |
-| 5 | 892 | 18 | 1,180 | 62 |
-
-### Load Test Results (Apache JMeter - 100 Concurrent Users)
-
-| Metric | Value |
-|--------|-------|
-| **Total Requests** | 50,000 |
-| **Test Duration** | 300 seconds |
-| **Throughput** | 1,180 req/s |
-| **Avg Latency** | 18 ms |
-| **Median Latency** | 15 ms |
-| **P90 Latency** | 28 ms |
-| **P95 Latency** | 35 ms |
-| **P99 Latency** | 52 ms |
-| **Max Latency** | 187 ms |
-| **Error Rate** | 0.02% |
-
-### Fault Tolerance Test Results
-
-| Failure Scenario | Detection (s) | Recovery (s) | Requests Lost | Data Lost |
-|-----------------|---------------|--------------|---------------|-----------|
-| Single Search Node | 1.2 | 2.8 | 0 | 0 |
-| Single Hazelcast Node | 2.1 | 4.5 | 0 | 0 |
-| Ingestion Node crash | 1.8 | 3.2 | 2 | 0 |
-| ActiveMQ restart | 0.5 | 1.5 | 0 | 0 |
-| 2 Workers simultaneous | 3.4 | 7.8 | 5 | 0 |
-
-### Resource Utilization (Steady State)
-
-| Node | CPU (%) | Memory (%) | Net In (MB/s) | Net Out (MB/s) |
-|------|---------|------------|---------------|----------------|
-| PC1 (Master) | 45 | 52 | 12.4 | 15.8 |
-| PC2 (Worker) | 68 | 61 | 8.2 | 6.5 |
-| PC3 (Worker) | 65 | 58 | 7.9 | 6.2 |
-| PC4 (Worker) | 72 | 67 | 9.1 | 11.3 |
-| PC5 (Worker) | 71 | 65 | 8.8 | 10.7 |
-| PC6 (Worker) | 58 | 54 | 14.2 | 12.1 |
-| **Average** | **63** | **60** | **10.1** | **10.4** |
-
-### Index Distribution Statistics
-
-| Metric | Value |
-|--------|-------|
-| Total Unique Terms | 2,847,392 |
-| Total Word-Document Pairs | 18,456,721 |
-| Hazelcast Partitions Used | 271 |
-| Avg Entries per Partition | 68,107 |
-| Primary Partitions per Node | ~45 |
-| Backup Partitions per Node | ~90 |
-| Index Memory Usage | 1.2 GB (distributed) |
-| Per-Node Memory Usage | ~240 MB |
-
-### Benchmark Execution
-
-#### Run Ingestion Test
-```bash
-./benchmarks/run-ingestion-test.sh --docs=100
-```
-
-#### Run Search Test
-```bash
-./benchmarks/run-search-test.sh --queries=1000 --concurrency=10
-```
-
-#### Run Scale Test
-```bash
-./benchmarks/scale-test.sh --nodes=6
-```
-
-#### Run Failure Test
-```bash
-./benchmarks/failure-test.sh
-```
-
-#### Run JMeter Load Test
-```bash
-jmeter -n -t benchmarks/search-load-test.jmx -l results.jtl
+http://PCX_IP:7001/status # Ingestion service.
+http://PCX_IP:7002/status # Indexer service.
+http://PCX_IP:7003/status # Search engine.
 ```
 
 ## API Documentation
 
-### Ingestion Service (Port 7001)
+### Ingestion Service (7001)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/crawl/start` | POST | Start crawling |
-| `/api/crawl/stop` | POST | Stop crawling |
-| `/api/crawl/status` | GET | Crawl status |
-| `/api/ingest/{book_id}` | POST | Ingest specific book |
-| `/api/ingest/batch` | POST | Batch ingest |
-| `/status` | GET | Health check |
-| `/datalake/stats` | GET | Datalake statistics |
-
-### Indexer Service (Port 7002)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/index/build` | POST | Build index |
-| `/api/index/update/{book_id}` | POST | Index specific book |
-| `/api/index/status` | GET | Index status |
-| `/api/index/stats` | GET | Index statistics |
-| `/status` | GET | Health check |
-
-### Search Service (Port 7003)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/search` | GET | Search books |
-| `/api/book/{id}` | GET | Get book by ID |
-| `/api/books` | GET | List all books |
-| `/admin/reload` | POST | Reload cache |
-| `/health` | GET | Health check |
-| `/status` | GET | Service status |
-
-## Configuration
-
-### Environment Variables (.env)
-
-```properties
-# Hazelcast Configuration
-HAZELCAST_CLUSTER_NAME=search-cluster
-HAZELCAST_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
-
-# ActiveMQ Configuration
-ACTIVEMQ_HOST=activemq
-ACTIVEMQ_PORT=61616
-ACTIVEMQ_USER=admin
-ACTIVEMQ_PASSWORD=admin
-
-# Service Configuration
-DATALAKE_PATH=/data/datalake
-INDEX_PATH=/data/indexer
-REPLICATION_FACTOR=2
-
-# NGINX Configuration
-NGINX_WORKER_CONNECTIONS=1024
+#### Start Pipeline for a Book
+```powershell
+iwr -Method Post http://PCX_IP:7001/ingest/{book_id}
+```
+Example:
+```powershell
+iwr -Method Post http://10.26.14.239:7001/ingest/11
 ```
 
-### Hazelcast Configuration
+#### Start Pipeline for a Book Queue
 
-```xml
-<!-- hazelcast.xml -->
-<hazelcast>
-    <cluster-name>search-cluster</cluster-name>
-    <network>
-        <port auto-increment="true">5701</port>
-        <join>
-            <multicast enabled="false"/>
-            <tcp-ip enabled="true">
-                <member>10.6.130.101</member>
-                <member>10.6.130.102</member>
-                <member>10.6.130.103</member>
-                <member>10.6.130.104</member>
-                <member>10.6.130.105</member>
-                <member>10.6.130.106</member>
-            </tcp-ip>
-        </join>
-    </network>
-    <multimap name="inverted-index">
-        <backup-count>2</backup-count>
-        <async-backup-count>1</async-backup-count>
-    </multimap>
-    <cp-subsystem>
-        <cp-member-count>3</cp-member-count>
-    </cp-subsystem>
-</hazelcast>
+```powershell
+iwr -Method Post http://PCX_IP:7001/benchmark/start?n={numBooks}
+```
+Example:
+```powershell
+iwr -Method Post http://10.26.14.239:7001/benchmark/start?n=500
 ```
 
-## Project Structure
-
+#### Get Book Status
+```powershell
+iwr http://PCX_IP:7001/ingest/status/{book_id}
 ```
-stage_3/
-├── common/                          # Shared libraries
-│   ├── src/main/java/
-│   │   └── com/dreamteam/common/
-│   │       ├── hazelcast/           # Hazelcast utilities
-│   │       ├── messaging/           # ActiveMQ utilities
-│   │       └── models/              # Shared models
-│   └── pom.xml
-│
-├── ingestion-service/               # Crawler service
-│   ├── Dockerfile
-│   ├── src/main/java/
-│   │   └── com/dreamteam/ingestion/
-│   │       ├── crawler/             # Document download
-│   │       ├── datalake/            # Storage & replication
-│   │       └── messaging/           # Event publishing
-│   └── pom.xml
-│
-├── indexer-service/                 # Indexing service
-│   ├── Dockerfile
-│   ├── src/main/java/
-│   │   └── com/dreamteam/indexer/
-│   │       ├── consumer/            # Message consumption
-│   │       ├── indexing/            # Tokenization & indexing
-│   │       └── hazelcast/           # Index updates
-│   └── pom.xml
-│
-├── search-service/                  # Search service
-│   ├── Dockerfile
-│   ├── src/main/java/
-│   │   └── com/bigdata/search/
-│   │       ├── query/               # Query processing
-│   │       ├── ranking/             # Result ranking
-│   │       └── cache/               # Query caching
-│   └── pom.xml
-│
-├── nginx/                           # Load balancer
-│   ├── nginx.conf                   # Single-host config
-│   └── nginx.multihost.conf         # Multi-host config
-│
-├── docker/                          # Docker orchestration
-│   ├── docker-compose-broker.yml    # ActiveMQ setup
-│   └── docker-compose-cluster.yml   # Full cluster
-│
-├── benchmarks/                      # Benchmark scripts
-│   ├── run-ingestion-test.sh
-│   ├── run-search-test.sh
-│   ├── scale-test.sh
-│   ├── failure-test.sh
-│   └── search-load-test.jmx
-│
-├── docker-compose-full.yml          # Full stack (single machine)
-├── docker-compose-hazelcast.yml     # Hazelcast cluster only
-├── docker-compose-pc1.yml           # PC1 deployment
-├── docker-compose-pc2.yml           # PC2 deployment
-├── docker-compose-pc3.yml           # PC3 deployment
-├── docker-compose-pc4.yml           # PC4 deployment
-├── docker-compose-pc5.yml           # PC5 deployment
-├── docker-compose-pc6.yml           # PC6 deployment
-├── start-cluster.ps1                # Windows cluster script
-├── .env                             # Environment variables
-├── pom.xml                          # Parent POM
-└── README.md
+Example:
+```powershell
+iwr http://10.26.14.239:7001/ingest/status/11
+```
+
+#### Get Datalake Stats
+```powershell
+iwr http://PCX_IP:7001/datalake/stats
+```
+
+### Indexer Service (7002)
+
+#### Get Local Indexing Status
+```powershell
+iwr http://PCX_IP:7002/index/status
+```
+
+#### Get Distributed Indexing Status
+```powershell
+iwr http://PCX_IP:7002/index/distributed/stats
+```
+
+#### Index single book into distributed index
+```powershell
+iwr -Method Post http://PCX_IP:7002/index/distributed/{book_id}
+```
+Example
+```powershell
+iwr http://10.26.14.239:7002/index/distributed/11
+```
+
+#### Update Index for a Book
+```powershell
+iwr -Method Post http://PCX_IP:7002/index/update/{book_id}
+```
+Example:
+```bash
+iwr -Method Post http://10.26.14.239:7002/index/update/11
+```
+
+#### Rebuild Distributed Index
+```powershell
+iwr http://PCX_IP:7002/index/distributed/rebuild
+```
+
+### Search Service (7003)
+
+#### Health Check
+```powershell
+iwr http://PCX_IP:7003/health
+```
+
+#### Service Status
+```powershell
+iwr http://PCX_IP:7003/status
+```
+
+#### Search Books
+```powershell
+iwr http://PCX_IP:7003/search?q={query}&mode={and|or}&author={author}&language={language}&page={page}&pageSize={pageSize}
+```
+
+Parameters:
+- `q` (required): Search query
+- `mode` (optional): Search mode - "and" or "or" (default: "and")
+- `author` (optional): Filter by author
+- `language` (optional): Filter by language
+- `page` (optional): Page number (default: 1)
+- `pageSize` (optional): Results per page (default: 20)
+
+Example:
+```powershell
+iwr http://10.26.14.239:7003/search?q=love&mode=and&page=1&pageSize=10
+```
+
+#### Get Book Metadata by ID
+```powershell
+iwr http://PCX_IP:7003/book/{id}
+```
+Example:
+```powershell
+iwr http://10.26.14.239:7003/book/11
+```
+
+#### Distributed Search
+```powershell
+iwr http://PCX_IP:7003/search/distributed?q={query}&mode={and|or}&limit={limit}
+```
+Example:
+```powershell
+iwr http://10.26.14.239:7003/search/distributed?q=love&mode=and&limit=50
+```
+
+#### Get Distributed Index Stats
+```powershell
+iwr http://PCX_IP:7003/search/distributed/stats
 ```
 
 ## Technology Stack
 
-| Category | Technology | Version |
-|----------|------------|---------|
-| **Framework** | Javalin | 6.1.3 |
-| **Distributed Cache** | Hazelcast | 5.x |
-| **Message Broker** | Apache ActiveMQ | 5.x |
-| **Load Balancer** | NGINX | latest |
-| **Containerization** | Docker, Docker Compose | 24.x |
-| **Database** | SQLite | 3.x |
-| **JSON** | Gson, Jackson | - |
-| **Build** | Maven | 3.6+ |
-| **Java** | OpenJDK | 17 |
+- **Framework**: [Javalin](https://javalin.io/) - Lightweight web framework
+- **JSON Processing**: Gson, Jackson
+- **Database**: SQLite with JDBC
+- **Build Tool**: Maven
+- **Java Version**: 17
 
-## Video Demonstration
+## Key Dependencies
 
-📹 **YouTube Video**: [Stage 3] Search Engine Project - Dream Team (ULPGC)
+- `io.javalin:javalin:6.1.3` - REST API framework
+- `com.google.code.gson:gson:2.11.0` - JSON serialization
+- `com.fasterxml.jackson.datatype:jackson-datatype-jsr310` - Java 8 date/time support
+- `org.xerial:sqlite-jdbc:3.45.0.0` - SQLite database driver
+- `org.slf4j:slf4j-simple` - Logging
 
-**Video Link**: `[TO BE ADDED]`
+## Contributing
 
-**Video Contents:**
-1. **[0:00-1:30]** - Cluster deployment across 6 PCs using Docker Compose
-2. **[1:30-3:00]** - Book ingestion and indexing demonstration
-3. **[3:00-4:30]** - Search queries through NGINX load balancer
-4. **[4:30-5:30]** - Node failure simulation and automatic recovery
-5. **[5:30-6:00]** - Hazelcast Management Center monitoring
-
-## Team
-
-**Group Name**: Dream Team
-
-| Name | DNI |
-|------|-----|
-| Karel Carracedo Santana | 46248024S |
-| Yain Estrada Domínguez | 42423199K |
-| Alberto Guedes Martín | 49799603A |
-| Daniel López Correas | 45347700A |
-| Raúl Mendoza Peña | 54115580F |
-| Adrián Ojeda Viera | 45364780V |
+This project was developed by **DREAM-TEAM-ULPGC** for Big Data course work.
 
 ## License
 
-This project is part of academic coursework at Universidad de Las Palmas de Gran Canaria (ULPGC).
+This project is part of academic coursework at ULPGC.
 
 ---
 
+**Author**: DREAM-TEAM-ULPGC  
 **Course**: Big Data  
-**Academic Year**: 2025-2026  
-**Stage**: 3 - Building a Cluster Architecture
+**Stage**: 2
