@@ -332,4 +332,4 @@ This project is part of academic coursework at ULPGC.
 
 **Author**: DREAM-TEAM-ULPGC  
 **Course**: Big Data  
-**Stage**: 2
+**Stage**: 3
